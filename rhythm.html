@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Air Band 리듬 게임</title>
+    <style>
+      :root {
+        --bg: #f6f7f9;
+        --panel: #ffffff;
+        --text: #16181d;
+        --dim: #6b7280;
+        --line: #e3e5ea;
+        --accent: #2563eb;
+        --ok: #16a34a;
+        --warn: #b45309;
+        --warn-bg: #fef3c7;
+        --scrim: rgb(246 247 249 / 0.92);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0f1115;
+          --panel: #171a20;
+          --text: #e8eaef;
+          --dim: #8b93a1;
+          --line: #262a33;
+          --accent: #60a5fa;
+          --ok: #4ade80;
+          --warn: #fbbf24;
+          --warn-bg: #3a2c0a;
+          --scrim: rgb(15 17 21 / 0.92);
+        }
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font: 15px/1.45 system-ui, -apple-system, 'Segoe UI', 'Noto Sans KR', sans-serif;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px 12px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
+      }
+      h1 { font-size: 17px; margin: 0 8px 0 0; }
+      button, .btn {
+        font: inherit;
+        padding: 8px 14px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--text);
+        cursor: pointer;
+        text-decoration: none;
+      }
+      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+      button:disabled { opacity: 0.5; cursor: default; }
+      .meta { color: var(--dim); font-size: 13px; }
+      .meta b { color: var(--text); font-weight: 600; }
+      #status[data-state='connected'] { color: var(--ok); }
+      .spacer { flex: 1; }
+
+      /* 게임 영역 */
+      main { flex: 1; position: relative; min-height: 0; }
+      #game { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+      .hud {
+        position: absolute;
+        top: 12px;
+        left: 16px;
+        right: 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        pointer-events: none;
+        font-variant-numeric: tabular-nums;
+      }
+      .hud .score { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; }
+      .hud .label { font-size: 12px; color: var(--dim); }
+      .hud .right { text-align: right; }
+      .progress { position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--line); }
+      .progress span { display: block; height: 100%; width: 0; background: var(--accent); }
+
+      /* 메뉴 · 결과 오버레이 */
+      .overlay {
+        position: absolute;
+        inset: 0;
+        background: var(--scrim);
+        overflow-y: auto;
+        padding: 24px 16px 40px;
+      }
+      .overlay .inner { max-width: 640px; margin: 0 auto; }
+      .overlay h2 { font-size: 22px; margin: 0 0 4px; }
+      .overlay .lead { color: var(--dim); margin: 0 0 18px; font-size: 14px; }
+      .songs { display: grid; gap: 10px; }
+      .song {
+        text-align: left;
+        width: 100%;
+        padding: 14px 16px;
+        border-radius: 12px;
+        border: 2px solid var(--line);
+        background: var(--panel);
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 2px 12px;
+      }
+      .song[aria-pressed='true'] { border-color: var(--accent); }
+      .song .t { font-weight: 700; font-size: 16px; }
+      .song .lv { color: var(--warn); font-size: 14px; letter-spacing: 1px; }
+      .song .d { grid-column: 1 / -1; color: var(--dim); font-size: 13px; }
+      .song .info { grid-column: 1 / -1; color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+      .options {
+        margin: 18px 0;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 10px 14px;
+        align-items: center;
+        font-size: 14px;
+      }
+      .options .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .options input[type='range'] { flex: 1; min-width: 140px; }
+      .options output { font-variant-numeric: tabular-nums; min-width: 64px; }
+      .seg button { padding: 6px 12px; }
+      .seg button[aria-pressed='true'] { background: var(--accent); border-color: var(--accent); color: #fff; }
+      .howto {
+        font-size: 13px;
+        color: var(--dim);
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px 14px;
+        margin-bottom: 18px;
+      }
+      .howto b { color: var(--text); }
+      .start { width: 100%; padding: 14px; font-size: 17px; font-weight: 700; }
+      .hint { margin: 12px 0 0; padding: 10px 12px; border-radius: 8px; background: var(--warn-bg); color: var(--warn); font-size: 13px; }
+
+      .result .rank { font-size: 88px; font-weight: 900; line-height: 1; margin: 8px 0; }
+      .result .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 16px 0; }
+      .result .grid div { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; text-align: center; }
+      .result .grid b { display: block; font-size: 22px; font-variant-numeric: tabular-nums; }
+      .result .grid span { font-size: 12px; color: var(--dim); }
+      .result .calib { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; font-size: 14px; margin-bottom: 16px; }
+      .result .actions { display: flex; gap: 10px; }
+      .result .actions button { flex: 1; padding: 12px; font-weight: 700; }
+
+      .count {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        font-size: 120px;
+        font-weight: 900;
+        pointer-events: none;
+        color: var(--accent);
+      }
+      @media (max-width: 480px) {
+        .result .grid { grid-template-columns: repeat(2, 1fr); }
+        .hud .score { font-size: 22px; }
+      }
+    </style>
+    <script type="module" crossorigin src="./assets/rhythm-B-KFm52v.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/audio-BYnkcn1F.js">
+  </head>
+  <body>
+    <header>
+      <h1>🥁 Air Band 리듬 게임</h1>
+      <button id="connect" class="primary">센서 연결</button>
+      <span class="meta">상태 <b id="status" data-state="disconnected">연결 안 됨</b></span>
+      <span class="spacer"></span>
+      <a class="btn" href="./">자유 연주로</a>
+    </header>
+    <main>
+      <canvas id="game"></canvas>
+      <div class="progress"><span id="progress"></span></div>
+      <div class="hud" id="hud" hidden>
+        <div>
+          <div class="label" id="hud-title"></div>
+          <div class="score" id="hud-score">0</div>
+        </div>
+        <div class="right">
+          <div class="label">정확도</div>
+          <div class="score" id="hud-acc">100%</div>
+        </div>
+      </div>
+      <div class="count" id="count" hidden></div>
+
+      <!-- 곡 선택 -->
+      <section class="overlay" id="menu">
+        <div class="inner">
+          <h2>곡 선택</h2>
+          <p class="lead">위에서 떨어지는 음표가 아래 선에 닿을 때 맞는 드럼을 치세요.</p>
+          <div class="howto">
+            <b>치는 법</b> · 보드 버튼 1~4 · 키보드 <b>1 2 3 4</b> 또는 <b>D F J K</b> · 화면 줄 터치<br />
+            <b>줄 순서</b> · 스네어 · 킥 · 하이햇 · 탐 &nbsp;|&nbsp; <b>Esc</b> 그만두기 · <b>Enter</b> 시작
+          </div>
+          <div class="songs" id="songs"></div>
+          <div class="options">
+            <span>가이드 소리</span>
+            <div class="row seg" id="opt-guide"></div>
+            <span>메트로놈</span>
+            <div class="row seg" id="opt-metro"></div>
+            <span>음표 속도</span>
+            <div class="row seg" id="opt-speed"></div>
+            <span>입력 보정</span>
+            <div class="row">
+              <input type="range" id="opt-offset" min="-150" max="150" step="5" />
+              <output id="opt-offset-out"></output>
+            </div>
+          </div>
+          <button class="primary start" id="start">시작</button>
+          <p class="hint" id="connect-hint">보드 버튼으로 치려면 위의 <b>센서 연결</b>을 먼저 누르세요. 자유 연주 화면과 연결이 따로라 여기서 다시 연결해야 합니다.</p>
+        </div>
+      </section>
+
+      <!-- 결과 -->
+      <section class="overlay result" id="result" hidden>
+        <div class="inner">
+          <h2 id="res-title"></h2>
+          <div class="rank" id="res-rank"></div>
+          <p class="lead"><span id="res-score"></span>점 · 정확도 <span id="res-acc"></span> · 최대 콤보 <span id="res-combo"></span></p>
+          <div class="grid">
+            <div><b id="res-perfect"></b><span>Perfect</span></div>
+            <div><b id="res-great"></b><span>Great</span></div>
+            <div><b id="res-good"></b><span>Good</span></div>
+            <div><b id="res-miss"></b><span>Miss</span></div>
+          </div>
+          <div class="calib" id="res-calib"></div>
+          <div class="actions">
+            <button id="res-retry" class="primary">다시 하기</button>
+            <button id="res-menu">곡 선택</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
