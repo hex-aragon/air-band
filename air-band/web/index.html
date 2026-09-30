@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Air Band</title>
+    <style>
+      :root {
+        --bg: #f6f7f9;
+        --panel: #ffffff;
+        --text: #16181d;
+        --dim: #6b7280;
+        --line: #e3e5ea;
+        --accent: #2563eb;
+        --ok: #16a34a;
+        --warn: #b45309;
+        --warn-bg: #fef3c7;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0f1115;
+          --panel: #171a20;
+          --text: #e8eaef;
+          --dim: #8b93a1;
+          --line: #262a33;
+          --accent: #60a5fa;
+          --ok: #4ade80;
+          --warn: #fbbf24;
+          --warn-bg: #3a2c0a;
+        }
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font: 15px/1.45 system-ui, -apple-system, 'Segoe UI', 'Noto Sans KR', sans-serif;
+        display: flex;
+        flex-direction: column;
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
+      }
+      h1 { font-size: 17px; margin: 0 8px 0 0; }
+      button {
+        font: inherit;
+        padding: 8px 14px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--text);
+        cursor: pointer;
+      }
+      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+      button:disabled { opacity: 0.5; cursor: default; }
+      .meta { display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--dim); font-size: 13px; }
+      .meta b { color: var(--text); font-weight: 600; }
+      #status[data-state='connected'] { color: var(--ok); }
+      #support {
+        margin: 12px 16px 0;
+        padding: 10px 12px;
+        border-radius: 8px;
+        background: var(--warn-bg);
+        color: var(--warn);
+      }
+      .pads {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+        padding: 12px 16px 0;
+      }
+      .pad {
+        --hue: 200;
+        padding: 14px 8px;
+        border-radius: 12px;
+        border: 2px solid hsl(var(--hue) 70% 50% / 0.5);
+        background: hsl(var(--hue) 70% 50% / 0.08);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        transition: background 0.12s, transform 0.06s;
+        user-select: none;
+        touch-action: manipulation;
+      }
+      .pad .name { font-size: 16px; font-weight: 600; }
+      .pad .hint { font-size: 12px; color: var(--dim); }
+      .pad.on { background: hsl(var(--hue) 75% 50% / 0.45); transform: scale(0.97); transition: none; }
+      #connect-hint {
+        margin: 12px 16px 0;
+        padding: 10px 12px;
+        border-radius: 8px;
+        background: var(--warn-bg);
+        color: var(--warn);
+        font-size: 14px;
+      }
+      #connect-hint b { color: inherit; }
+      main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+      #stage { flex: 1; width: 100%; min-height: 220px; display: block; }
+      .latency {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1px;
+        background: var(--line);
+        border-top: 1px solid var(--line);
+      }
+      .latency div { background: var(--panel); padding: 10px 16px; }
+      .latency .label { font-size: 12px; color: var(--dim); }
+      .latency .value { font-size: 22px; font-variant-numeric: tabular-nums; }
+      .latency .value small { font-size: 13px; color: var(--dim); margin-left: 2px; }
+      section.log { background: var(--panel); border-top: 1px solid var(--line); padding: 8px 16px 12px; }
+      section.log h2 { font-size: 12px; color: var(--dim); font-weight: 500; margin: 0 0 4px; }
+      #log { list-style: none; margin: 0; padding: 0; max-height: 30vh; overflow-y: auto; }
+      #log li {
+        display: grid;
+        grid-template-columns: 92px 1fr 90px 32px 56px;
+        gap: 10px;
+        align-items: center;
+        padding: 3px 0;
+        font-size: 13px;
+        font-variant-numeric: tabular-nums;
+        border-bottom: 1px solid var(--line);
+      }
+      #log .src { font-size: 11px; color: var(--dim); margin-left: 4px; }
+      #log .t, #log .dim { color: var(--dim); }
+      #log .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      #log .num { text-align: right; }
+      #log .vel { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+      #log .bar { display: block; height: 100%; background: var(--accent); }
+      @media (max-width: 480px) {
+        #log li { grid-template-columns: 84px 1fr 60px 28px; }
+        #log li .dim { display: none; }
+        .latency .value { font-size: 18px; }
+        .pads { gap: 6px; }
+        .pad { padding: 12px 4px; }
+        .pad .name { font-size: 14px; }
+        .pad .hint { font-size: 11px; }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>🥁 Air Band</h1>
+      <button id="connect" class="primary">센서 연결</button>
+      <button id="test" title="스페이스바로도 칠 수 있습니다">테스트 타격</button>
+      <div class="meta">
+        <span>상태 <b id="status" data-state="disconnected">연결 안 됨</b></span>
+        <span>배터리 <b id="battery">—</b></span>
+        <span>소리 <b id="audio-src">로딩 중…</b></span>
+      </div>
+    </header>
+    <div id="support" hidden></div>
+    <div id="connect-hint">보드 버튼으로 치려면 먼저 <b>센서 연결</b> → <b>AirBand-R</b> 선택 → <b>페어링</b>을 눌러 연결하세요. 연결 전에는 화면 패드와 키보드 1~4만 동작합니다.</div>
+    <!-- 드럼 패드: 보드 버튼 1~4 / 키보드 1~4 / 클릭 모두 같은 소리 -->
+    <div class="pads" id="pads"></div>
+    <main>
+      <canvas id="stage"></canvas>
+      <div class="latency">
+        <div>
+          <div class="label">수신 → 재생 호출</div>
+          <div class="value"><span id="lat-proc">—</span><small>ms</small></div>
+        </div>
+        <div>
+          <div class="label">오디오 출력 버퍼</div>
+          <div class="value"><span id="lat-out">—</span><small>ms</small></div>
+        </div>
+        <div>
+          <div class="label">BLE 지터 (최소 대비)</div>
+          <div class="value"><span id="lat-jitter">—</span><small>ms</small></div>
+        </div>
+      </div>
+      <section class="log">
+        <h2>최근 타격 (시각 · 종류 · 세기 · 처리지연)</h2>
+        <ol id="log"></ol>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
