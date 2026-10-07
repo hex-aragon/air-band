@@ -15,6 +15,7 @@
         --ok: #16a34a;
         --warn: #b45309;
         --warn-bg: #fef3c7;
+        --rec: #dc2626;
       }
       @media (prefers-color-scheme: dark) {
         :root {
@@ -27,6 +28,7 @@
           --ok: #4ade80;
           --warn: #fbbf24;
           --warn-bg: #3a2c0a;
+          --rec: #f87171;
         }
       }
       * { box-sizing: border-box; }
@@ -141,6 +143,36 @@
         color: var(--warn);
         pointer-events: none;
       }
+      /* 연주 녹음 */
+      .rec {
+        margin: 12px 16px 0;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--panel);
+      }
+      .rec .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 8px 12px; font-size: 13px; }
+      .rec .bar h2 { font-size: 13px; font-weight: 600; margin: 0; }
+      #rec { padding: 5px 12px; font-size: 13px; color: var(--rec); border-color: var(--rec); }
+      #rec.on { background: var(--rec); color: #fff; }
+      #rec-status { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+      #rec-status[data-live] { color: var(--rec); font-weight: 600; }
+      #takes { list-style: none; margin: 0; padding: 0 12px 8px; max-height: 180px; overflow-y: auto; }
+      #takes li {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 0;
+        border-top: 1px solid var(--line);
+        font-size: 13px;
+      }
+      #takes li.empty { color: var(--dim); font-size: 12px; }
+      #takes li.new .name { color: var(--accent); }
+      #takes .info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+      #takes .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #takes .meta { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+      #takes button { padding: 4px 9px; font-size: 12px; }
+      #takes button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+      #takes button.danger { color: var(--dim); }
       main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
       #stage { flex: 1; width: 100%; min-height: 220px; display: block; }
       .latency {
@@ -185,10 +217,13 @@
         .motion { margin: 10px 12px 0; }
         .motion .bar .help { display: none; }
         #motion { height: 160px; }
+        .rec { margin: 10px 12px 0; }
+        #takes li { flex-wrap: wrap; }
+        #takes .info { flex-basis: 100%; }
       }
     </style>
-    <script type="module" crossorigin src="./assets/main-B1Xd0aZl.js"></script>
-    <link rel="modulepreload" crossorigin href="./assets/audio-DFEp6Imi.js">
+    <script type="module" crossorigin src="./assets/main-DmUUszv2.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/audio-q3PBDV62.js">
   </head>
   <body>
     <header>
@@ -218,6 +253,15 @@
         <canvas id="motion"></canvas>
         <div id="motion-note" hidden></div>
       </div>
+    </section>
+    <!-- 연주 녹음: 녹음 → 재생 · MIDI · 공유 링크 (recorder.ts) -->
+    <section class="rec">
+      <div class="bar">
+        <h2>연주 녹음</h2>
+        <button id="rec" title="키보드 R">● 녹음</button>
+        <span id="rec-status"></span>
+      </div>
+      <ol id="takes"></ol>
     </section>
     <main>
       <canvas id="stage"></canvas>
