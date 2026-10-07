@@ -32,6 +32,8 @@
         }
       }
       * { box-sizing: border-box; }
+      /* display를 지정한 요소(.hud, .count)도 hidden 속성이면 확실히 숨긴다 */
+      [hidden] { display: none !important; }
       html, body { margin: 0; height: 100%; }
       body {
         background: var(--bg);
@@ -82,7 +84,7 @@
         pointer-events: none;
         font-variant-numeric: tabular-nums;
       }
-      .hud .score { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; }
+      .hud .score { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; text-shadow: 0 0 8px var(--bg), 0 0 2px var(--bg); }
       .hud .label { font-size: 12px; color: var(--dim); }
       .hud .right { text-align: right; }
       .progress { position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--line); }
@@ -166,8 +168,8 @@
         .hud .score { font-size: 22px; }
       }
     </style>
-    <script type="module" crossorigin src="./assets/rhythm-B-KFm52v.js"></script>
-    <link rel="modulepreload" crossorigin href="./assets/audio-BYnkcn1F.js">
+    <script type="module" crossorigin src="./assets/rhythm-CYgI4gPM.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/audio-DFEp6Imi.js">
   </head>
   <body>
     <header>
