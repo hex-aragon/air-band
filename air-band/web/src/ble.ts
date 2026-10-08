@@ -3,26 +3,41 @@
 // [한눈에 보기] 이 파일이 하는 일
 //   1) 브라우저의 Web Bluetooth API로 보드(AirBand-R)를 찾아 연결한다.
 //   2) 보드의 TX 특성(characteristic)에 notify를 구독한다 → 보드가 보낼 때마다 이벤트가 온다.
-//   3) 받은 바이트를 8바이트씩 잘라 HitEvent 객체로 바꿔 onHit 콜백으로 넘긴다.
+//   3) 받은 바이트를 8바이트씩 잘라 HitEvent(타격) / MotionEvent(스틱 방향)로 바꿔 콜백으로 넘긴다.
+//   4) send()로 보드에 한 글자 명령을 보낸다 (RX 특성). c 정면 맞추기 · m 모션 켜기 · x 끄기
 //   소리·화면은 이 파일이 모른다. main.ts가 onHit을 받아 처리한다.
 //
 // [설명] UUID는 BLE 서비스/특성의 고유 이름표다. 아래 세 개는 Nordic UART Service 표준값이라
 //   펌웨어의 BLEUart와 자동으로 맞는다. TX/RX는 "보드 입장"에서 붙인 이름이다.
 export const NUS_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 export const NUS_TX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // 보드 → 브라우저 (notify)
-export const NUS_RX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // 브라우저 → 보드 (write, 현재 미사용)
+export const NUS_RX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // 브라우저 → 보드 (write, 한 글자 명령)
 export const DEVICE_NAME = 'AirBand-R';
 
 export const PACKET_SIZE = 8;
+/** 0번 바이트가 이 값이면 모션 패킷 (타격 패킷의 0번 바이트 hand는 0/1) — 펌웨어 PKT_MOTION과 같음 */
+export const PKT_MOTION = 0x80;
+
+/** 보드에 보내는 한 글자 명령 (펌웨어 handleCommand와 같음) */
+export const CMD = { recenter: 'c', motionOn: 'm', motionOff: 'x' } as const;
 
 /** 타격 이벤트 (패킷 8바이트 + 수신 시각) */
 export interface HitEvent {
   hand: number; // 0 = 오른손, 1 = 왼손
   mode: number; // 0 = 드럼
-  cls: number; // 0 = 스네어
+  cls: number; // 0 스네어 · 1 킥 · 2 하이햇 · 3 탐 · 4 크래시
   velocity: number; // 0~127
   boardMs: number; // 보드 millis (uint32)
   receivedAt: number; // 브라우저 수신 시각 (performance.now)
+}
+
+/** 스틱 방향 (모션 스트림, 25Hz). 각도는 "정면 맞추기" 한 방향 기준 */
+export interface MotionEvent {
+  zone: number; // 지금 치면 나올 드럼 클래스
+  headingDeg: number; // + = 왼쪽, - = 오른쪽
+  elevationDeg: number; // + = 위
+  accelG: number; // 가속도 크기 (가만히 있으면 약 1g)
+  receivedAt: number;
 }
 
 export type ConnState = 'disconnected' | 'connecting' | 'connected';
@@ -40,12 +55,29 @@ export type BatteryInfo = number | 'none';
 export function parsePackets(dv: DataView, receivedAt: number): HitEvent[] {
   const out: HitEvent[] = [];
   for (let off = 0; off + PACKET_SIZE <= dv.byteLength; off += PACKET_SIZE) {
+    if (dv.getUint8(off) === PKT_MOTION) continue; // 모션 패킷은 parseMotions()가 처리
     out.push({
       hand: dv.getUint8(off + 0),
       mode: dv.getUint8(off + 1),
       cls: dv.getUint8(off + 2),
       velocity: Math.min(127, dv.getUint8(off + 3)),
       boardMs: dv.getUint32(off + 4, true), // little-endian
+      receivedAt,
+    });
+  }
+  return out;
+}
+
+/** notify 값에서 모션 패킷만 골라낸다. [1] zone, [2..3] heading×10, [4..5] elevation×10 (int16), [6..7] mg (uint16) */
+export function parseMotions(dv: DataView, receivedAt: number): MotionEvent[] {
+  const out: MotionEvent[] = [];
+  for (let off = 0; off + PACKET_SIZE <= dv.byteLength; off += PACKET_SIZE) {
+    if (dv.getUint8(off) !== PKT_MOTION) continue;
+    out.push({
+      zone: dv.getUint8(off + 1),
+      headingDeg: dv.getInt16(off + 2, true) / 10,
+      elevationDeg: dv.getInt16(off + 4, true) / 10,
+      accelG: dv.getUint16(off + 6, true) / 1000,
       receivedAt,
     });
   }
@@ -74,11 +106,15 @@ export function webBluetoothSupport(): { ok: boolean; reason?: string } {
 
 export class AirBandConnection {
   onHit: (e: HitEvent) => void = () => {};
+  onMotion: (m: MotionEvent) => void = () => {};
   onState: (s: ConnState, detail?: string) => void = () => {};
   onBattery: (b: BatteryInfo) => void = () => {};
 
   private device: BluetoothDevice | null = null;
   private tx: BluetoothRemoteGATTCharacteristic | null = null;
+  private rx: BluetoothRemoteGATTCharacteristic | null = null;
+  /** GATT 쓰기는 한 번에 하나만 가능해서 줄 세워 보낸다 */
+  private writeChain: Promise<void> = Promise.resolve();
 
   // [설명] 연결 절차 (await = 그 단계가 끝날 때까지 기다림)
   //   requestDevice()      : 브라우저가 기기 선택 창을 띄운다. 반드시 사용자 클릭 안에서 불러야 한다(보안 규칙).
@@ -101,6 +137,7 @@ export class AirBandConnection {
       const server = await device.gatt!.connect();
       const service = await server.getPrimaryService(NUS_SERVICE);
       this.tx = await service.getCharacteristic(NUS_TX);
+      this.rx = await service.getCharacteristic(NUS_RX);
       this.tx.addEventListener('characteristicvaluechanged', this.handleNotify);
       await this.tx.startNotifications();
 
@@ -115,6 +152,17 @@ export class AirBandConnection {
 
   disconnect(): void {
     this.device?.gatt?.disconnect();
+  }
+
+  /** 보드에 한 글자 명령 보내기 (CMD 참고). 연결 전이면 아무것도 하지 않는다 */
+  send(cmd: string): Promise<void> {
+    const rx = this.rx;
+    if (!rx) return Promise.resolve();
+    const data = new TextEncoder().encode(cmd);
+    this.writeChain = this.writeChain
+      .then(() => rx.writeValueWithoutResponse(data))
+      .catch((err) => console.warn('명령 전송 실패', cmd, err));
+    return this.writeChain;
   }
 
   private async readBattery(server: BluetoothRemoteGATTServer): Promise<void> {
@@ -139,6 +187,7 @@ export class AirBandConnection {
     const ch = ev.target as BluetoothRemoteGATTCharacteristic;
     if (!ch.value) return;
     for (const hit of parsePackets(ch.value, receivedAt)) this.onHit(hit);
+    for (const m of parseMotions(ch.value, receivedAt)) this.onMotion(m);
   };
 
   private handleDisconnect = (): void => {
@@ -150,6 +199,7 @@ export class AirBandConnection {
     this.tx?.removeEventListener('characteristicvaluechanged', this.handleNotify);
     this.device?.removeEventListener('gattserverdisconnected', this.handleDisconnect);
     this.tx = null;
+    this.rx = null;
     this.device = null;
   }
 }

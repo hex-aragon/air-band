@@ -3,28 +3,29 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Air Band 1단계 PoC</title>
+  <title>Air Band 쉽게 보기</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.1.0/reset.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.1.0/reveal.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.1.0/theme/white.min.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.1.0/plugin/highlight/monokai.min.css">
   <style>
     :root {
       --ink: #0f172a;
+      --body: #334155;
       --dim: #64748b;
       --line: #e2e8f0;
       --accent: #2563eb;
       --accent-soft: #eff6ff;
       --ok: #16a34a;
+      --ok-soft: #f0fdf4;
       --warn: #b45309;
       --warn-soft: #fef3c7;
-      --snare: hsl(200 70% 50%);
-      --kick: hsl(270 70% 55%);
-      --hihat: hsl(340 70% 55%);
-      --tom: hsl(50 75% 45%);
+      --snare: hsl(200 70% 45%);
+      --kick: hsl(270 65% 55%);
+      --hihat: hsl(340 70% 52%);
+      --tom: hsl(45 85% 40%);
       --r-main-font: 'Noto Sans KR', system-ui, sans-serif;
       --r-heading-font: 'Noto Sans KR', system-ui, sans-serif;
       --r-code-font: 'JetBrains Mono', ui-monospace, monospace;
@@ -39,54 +40,72 @@
     body { background: #fff; }
     .reveal .slides { text-align: left; }
     .reveal .slides section { height: 100%; }
-    .reveal h1 { font-size: 2.3em; line-height: 1.15; }
-    .reveal h2 { font-size: 1.45em; margin-bottom: 0.6em; }
+    .reveal h1 { font-size: 2.2em; line-height: 1.2; }
+    .reveal h2 { font-size: 1.35em; margin-bottom: 0.5em; }
     .reveal h2 .num { color: var(--accent); font-weight: 900; margin-right: 0.35em; }
-    .reveal p, .reveal li { line-height: 1.5; }
+    .reveal p, .reveal li { line-height: 1.55; }
     .reveal ul { margin-left: 1.1em; }
     .reveal li + li { margin-top: 0.3em; }
     .reveal .dim { color: var(--dim); }
     .reveal .small { font-size: 0.72em; }
+    .reveal .xs { font-size: 0.6em; }
     .reveal strong { color: var(--accent); }
     .reveal code { font-size: 0.85em; }
     .reveal :not(pre) > code { background: #f1f5f9; padding: 0.05em 0.3em; border-radius: 4px; }
-    .reveal pre { width: 100%; box-shadow: none; font-size: 0.62em; border-radius: 10px; overflow: hidden; }
-    .reveal pre code { max-height: 520px; padding: 18px 22px; border-radius: 10px; }
-    .reveal pre.log code { background: #0f172a; color: #e2e8f0; }
-    .reveal table { font-size: 0.72em; border-collapse: collapse; margin: 0; }
-    .reveal table th, .reveal table td { padding: 0.35em 0.9em; border-bottom: 1px solid var(--line); text-align: left; }
+    .reveal pre { width: 100%; box-shadow: none; font-size: 0.56em; border-radius: 10px; margin: 0; }
+    .reveal pre code { padding: 16px 22px; border-radius: 10px; background: #0f172a; color: #e2e8f0; line-height: 1.6; max-height: none; }
+    .reveal table { font-size: 0.66em; border-collapse: collapse; margin: 0; width: 100%; }
+    .reveal table th, .reveal table td { padding: 0.35em 0.7em; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
     .reveal table th { color: var(--dim); font-weight: 500; border-bottom: 2px solid var(--ink); }
     .reveal img { margin: 0; }
     .shot { border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 30px rgb(15 23 42 / 0.12); }
 
-    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
-    .cols.wide-left { grid-template-columns: 1.4fr 1fr; }
-    .cols.wide-right { grid-template-columns: 1fr 1.5fr; }
-    .cols.three { grid-template-columns: repeat(3, 1fr); gap: 24px; }
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 36px; align-items: start; }
+    .cols.three { grid-template-columns: repeat(3, 1fr); gap: 22px; }
+    .cols.wide-left { grid-template-columns: 1.3fr 1fr; }
 
-    .card { border: 1px solid var(--line); border-radius: 14px; padding: 22px 24px; background: #fff; }
-    .card h3 { font-size: 0.85em; margin: 0 0 0.4em; font-weight: 700; }
-    .card p { font-size: 0.68em; margin: 0; color: #334155; }
-    .card.accent { background: var(--accent-soft); border-color: #bfdbfe; }
-    .card.warn { background: var(--warn-soft); border-color: #fde68a; }
+    .card { border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; background: #fff; }
+    .card h3 { font-size: 0.8em; margin: 0 0 0.35em; font-weight: 700; }
+    .card p { font-size: 0.64em; margin: 0; color: var(--body); }
+    .card .big { font-size: 1.6em; line-height: 1; margin-bottom: 10px; }
 
-    .kpi { font-size: 2.2em; font-weight: 900; letter-spacing: -0.03em; line-height: 1; }
+    /* "쉽게 말하면" 상자 */
+    .easy { border-left: 6px solid var(--ok); background: var(--ok-soft); border-radius: 0 12px 12px 0; padding: 14px 20px; margin-top: 18px; }
+    .easy::before { content: '쉽게 말하면'; display: block; font-size: 0.5em; font-weight: 700; color: var(--ok); letter-spacing: 0.05em; margin-bottom: 2px; }
+    .easy p { font-size: 0.66em; margin: 0; color: var(--ink); }
+
+    /* 용어 풀이 */
+    .reveal dl.terms { display: grid; grid-template-columns: max-content 1fr; gap: 12px 22px; font-size: 0.68em; align-items: baseline; margin: 0; width: 100%; }
+    .reveal .terms dt { font-weight: 700; color: var(--accent); white-space: nowrap; margin: 0; }
+    .reveal .terms dd { margin: 0; color: var(--body); }
+
+    /* 흐름 화살표 */
+    .flow { display: flex; align-items: stretch; gap: 10px; margin: 6px 0 0; }
+    .flow .step { flex: 1; border-radius: 14px; padding: 16px 12px; text-align: center; background: #f8fafc; border: 1px solid var(--line); }
+    .flow .step .big { font-size: 1.5em; line-height: 1.1; }
+    .flow .step b { display: block; font-size: 0.66em; margin-top: 6px; }
+    .flow .step span { display: block; font-size: 0.52em; color: var(--dim); margin-top: 4px; }
+    .flow .arrow { align-self: center; color: var(--dim); font-size: 0.9em; }
+
+    /* 8칸 쪽지 */
+    .bytes { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; margin: 8px 0 4px; }
+    .bytes > div { border: 2px solid var(--line); border-radius: 10px; text-align: center; padding: 10px 2px 8px; }
+    .bytes .v { font-size: 0.95em; font-weight: 800; font-family: var(--r-code-font); }
+    .bytes .n { font-size: 0.42em; color: var(--dim); margin-top: 4px; }
+    .bytes .hand, .bytes .mode { border-color: #cbd5e1; }
+    .bytes .cls { border-color: var(--kick); background: hsl(270 65% 55% / 0.08); }
+    .bytes .vel { border-color: var(--accent); background: var(--accent-soft); }
+    .bytes .ts { border-color: #94a3b8; background: #f8fafc; }
+    .bytes-label { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 4fr; gap: 6px; font-size: 0.5em; color: var(--dim); text-align: center; }
+
+    .kpi { font-size: 2em; font-weight: 900; letter-spacing: -0.03em; line-height: 1; }
     .kpi small { vertical-align: baseline; font-size: 0.4em; font-weight: 500; color: var(--dim); margin-left: 4px; }
-    .kpi-label { font-size: 0.6em; color: var(--dim); margin-top: 8px; }
 
-    .pill { display: inline-block; font-size: 0.55em; font-weight: 700; padding: 0.25em 0.8em; border-radius: 999px; background: var(--accent-soft); color: var(--accent); letter-spacing: 0.02em; }
-    .title-slide .sub { font-size: 0.9em; color: var(--dim); margin-top: 0.8em; }
-    .title-slide .pads { display: flex; gap: 14px; margin-top: 60px; }
-    .title-slide .pads span { flex: 1; padding: 18px 0; text-align: center; border-radius: 14px; font-weight: 700; font-size: 0.75em; border: 2px solid currentColor; }
-
-    .pad-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 10px 0 30px; }
-    .pad-row div { border: 2px solid currentColor; border-radius: 14px; padding: 16px 8px; text-align: center; }
-    .pad-row b { display: block; font-size: 0.85em; color: var(--ink); }
-    .pad-row span { font-size: 0.55em; color: var(--dim); }
-
-    .flow { display: flex; align-items: center; gap: 12px; font-size: 0.62em; margin: 10px 0 0; flex-wrap: wrap; }
-    .flow span { padding: 0.45em 0.9em; border-radius: 8px; background: #f1f5f9; }
-    .flow i { font-style: normal; color: var(--dim); }
+    .pill { display: inline-block; font-size: 0.55em; font-weight: 700; padding: 0.25em 0.8em; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+    .title-slide .sub { font-size: 0.85em; color: var(--dim); margin-top: 0.8em; }
+    .pads { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 40px; }
+    .pads div { padding: 16px 0; text-align: center; border-radius: 14px; font-weight: 700; font-size: 0.72em; border: 2px solid currentColor; }
+    .pads div span { display: block; font-size: 0.72em; font-weight: 500; color: var(--dim); margin-top: 2px; }
 
     .reveal .progress { color: var(--accent); height: 4px; }
     .reveal .slide-number { background: transparent; color: var(--dim); font-family: var(--r-main-font); font-size: 14px; }
@@ -98,285 +117,454 @@
 
     <!-- 1. 표지 -->
     <section class="title-slide">
-      <span class="pill">1단계 PoC</span>
+      <span class="pill">1단계 결과 발표 · 쉽게 보기</span>
       <h1 style="margin-top:0.5em">Air Band<br>허공을 치면 드럼이 울린다</h1>
-      <p class="sub">NU40 DK (nRF52840) · Web Bluetooth · Web Audio</p>
+      <p class="sub">작은 보드 + 블루투스 + 웹 브라우저로 만든 에어 드럼</p>
+      <p class="small" style="margin-top:0.6em">🔗 바로 해 보기: <a href="https://hex-aragon.github.io/air-band/" target="_blank" rel="noopener">hex-aragon.github.io/air-band</a></p>
       <div class="pads">
-        <span style="color:var(--snare)">스네어</span>
-        <span style="color:var(--kick)">킥</span>
-        <span style="color:var(--hihat)">하이햇</span>
-        <span style="color:var(--tom)">탐</span>
+        <div style="color:var(--snare)">스네어<span>버튼 1</span></div>
+        <div style="color:var(--kick)">킥<span>버튼 2</span></div>
+        <div style="color:var(--hihat)">하이햇<span>버튼 3</span></div>
+        <div style="color:var(--tom)">탐<span>버튼 4</span></div>
       </div>
-      <aside class="notes">스틱을 휘두르면 브라우저에서 드럼 소리가 나는 에어 밴드. 오늘은 그 1단계 결과를 공유합니다.</aside>
+      <aside class="notes">
+        오늘은 허공에 드럼 치는 동작을 하면 컴퓨터에서 드럼 소리가 나는 '에어 밴드' 1단계 결과를 소개합니다.
+        기술 용어가 나오면 그때마다 쉽게 풀어서 설명하겠습니다.
+      </aside>
     </section>
 
-    <!-- 2. 목표 -->
+    <!-- 2. 무엇을 만드나 -->
     <section>
       <h2><span class="num">01</span>무엇을 만드나</h2>
+      <div class="flow">
+        <div class="step"><div class="big">🥢</div><b>휘두르면</b><span>손목·스틱에 단 작은 보드가<br>"쳤다!"를 알아챔</span></div>
+        <div class="arrow">▶</div>
+        <div class="step"><div class="big">📡</div><b>블루투스로 알리고</b><span>"언제, 어떤 드럼을,<br>얼마나 세게" 쳤는지만 전송</span></div>
+        <div class="arrow">▶</div>
+        <div class="step" style="background:var(--ok-soft); border-color:#bbf7d0"><div class="big">🔊</div><b>브라우저가 연주</b><span>앱 설치 없이<br>인터넷 주소 하나로 열림</span></div>
+      </div>
+      <div class="easy"><p>보드는 <b>"드럼 쳤음!" 신호만 보내는 리모컨</b>이고, 실제 소리는 <b>컴퓨터·폰의 브라우저(크롬)</b>가 냅니다. TV 리모컨이 소리를 내지 않고 TV가 소리를 내는 것과 같습니다.</p></div>
+      <p class="xs dim" style="margin-top:14px">최종 목표: 휘두르는 동작만 보고 어떤 드럼인지 AI가 구분하는 양손 에어 드럼</p>
+      <aside class="notes">
+        세 단계로 보시면 됩니다. 보드가 치는 동작을 알아채고, 블루투스로 알려 주고, 브라우저가 소리를 냅니다.
+        보드는 리모컨, 브라우저는 TV라고 생각하시면 됩니다. 앱 설치가 필요 없는 게 장점입니다.
+      </aside>
+    </section>
+
+    <!-- 3. 준비물 -->
+    <section>
+      <h2><span class="num">02</span>무엇으로 만들었나</h2>
       <div class="cols three">
         <div class="card">
-          <h3>🥢 휘두르면</h3>
-          <p>손목이나 스틱에 단 작은 보드가 타격 동작을 감지합니다.</p>
+          <div class="big">🟦</div>
+          <h3>NU40 DK 보드</h3>
+          <p>누코드의 개발용 보드. 안에 <b>nRF52840</b>이라는 칩이 있어 블루투스와 프로그램 실행을 둘 다 합니다. 버튼 4개, LED 4개가 달려 있습니다.</p>
         </div>
         <div class="card">
-          <h3>📡 BLE로 보내고</h3>
-          <p>"언제, 어떤 드럼을, 얼마나 세게"만 8바이트로 전송합니다.</p>
+          <div class="big">🧭</div>
+          <h3>IMU (모션 센서)</h3>
+          <p>움직임을 재는 작은 부품. 스마트폰이 가로·세로를 아는 것도 이 센서 덕분입니다. <b>아직 연결 안 됨</b> → 이번엔 버튼으로 대신했습니다.</p>
         </div>
-        <div class="card accent">
-          <h3>🔊 브라우저가 연주</h3>
-          <p>앱 설치 없이 주소 하나로 엽니다. PC Chrome/Edge, Android Chrome.</p>
-        </div>
-      </div>
-      <p class="dim small" style="margin-top:1.4em">최종 목표: 동작만으로 스네어 / 하이햇 / 탐을 구분하는 양손 에어 드럼 (TinyML)</p>
-    </section>
-
-    <!-- 3. 구조 -->
-    <section>
-      <h2><span class="num">02</span>전체 구조</h2>
-      <img src="images/architecture.svg" alt="시스템 구조" style="width:100%">
-      <p class="dim small">보드는 판단만, 소리는 브라우저가 냅니다. 버튼과 IMU는 같은 전송 경로를 씁니다.</p>
-    </section>
-
-    <!-- 4. 패킷 -->
-    <section>
-      <h2><span class="num">03</span>8바이트 타격 패킷</h2>
-      <div class="cols wide-right">
-        <div>
-          <ul class="small">
-            <li>Nordic UART Service (NUS) notify</li>
-            <li>광고 이름 <code>AirBand-R</code></li>
-            <li>연결 간격 7.5~15ms 요청</li>
-            <li>한 notify에 여러 패킷이 붙어 와도 8바이트 단위로 자름</li>
-          </ul>
-        </div>
-        <table>
-          <thead><tr><th>바이트</th><th>필드</th><th>값</th></tr></thead>
-          <tbody>
-            <tr><td>0</td><td>손</td><td>0 = 오른손</td></tr>
-            <tr><td>1</td><td>모드</td><td>0 = 드럼</td></tr>
-            <tr><td>2</td><td>드럼 종류</td><td>0 스네어 · 1 킥 · 2 하이햇 · 3 탐</td></tr>
-            <tr><td>3</td><td>세기</td><td>1~127 (MIDI velocity)</td></tr>
-            <tr><td>4~7</td><td>보드 시각</td><td><code>millis()</code> LE uint32</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- 5. 펌웨어 -->
-    <section>
-      <h2><span class="num">04</span>펌웨어: 흔들림 → 타격</h2>
-      <div class="cols">
-        <div>
-          <ul class="small">
-            <li><b>100Hz</b> 샘플링 (<code>micros()</code> 비교)</li>
-            <li>3축 가속도 크기(g)의 <b>국소 최대값</b></li>
-            <li>임계값 <b>2.5g</b> 이상 + 불응기 <b>60ms</b></li>
-            <li>세기: 2.5g → 1, 12g → 127</li>
-            <li><code>classifyHit()</code> 훅 → 2단계 TinyML 자리</li>
-          </ul>
-        </div>
-        <div class="card warn">
-          <h3>지연 포인트: 전송 분리</h3>
-          <p>Bluefruit notify는 송신 버퍼가 차면 최대 100ms 대기합니다. 샘플링 루프는 FreeRTOS 큐에 <b>대기 0</b>으로 넣기만 하고, 별도 태스크가 전송합니다.</p>
+        <div class="card">
+          <div class="big">🌐</div>
+          <h3>웹 브라우저</h3>
+          <p>PC의 크롬·엣지, 안드로이드 크롬. <b>Web Bluetooth</b>(웹페이지가 블루투스를 쓰는 기능)와 <b>Web Audio</b>(웹페이지가 소리를 내는 기능)를 씁니다.</p>
         </div>
       </div>
-<pre><code class="language-cpp" data-trim>
-static void emitHit(uint8_t cls, uint8_t vel, uint32_t ts) {
-  HitPacket p;
-  buildPacket(p, cls, vel, ts);
-  xQueueSend(g_hitQueue, &p, 0);   // 대기 0: 큐가 가득 차도 막히지 않음
-}
-</code></pre>
+      <aside class="notes">
+        준비물은 세 가지입니다. 블루투스가 되는 보드, 움직임을 재는 센서, 그리고 크롬 같은 웹 브라우저.
+        센서는 아직 도착하지 않아서, 이번에는 보드에 있는 버튼 4개로 대신했습니다.
+      </aside>
     </section>
 
-    <!-- 6. 문제 -->
+    <!-- 4. 전체 구조 -->
     <section>
-      <h2><span class="num">05</span>그런데… 센서가 없었다</h2>
+      <h2><span class="num">03</span>전체 구조</h2>
+      <img src="images/architecture.svg" alt="시스템 구조" style="width:92%; display:block; margin:0 auto">
+      <div class="easy" style="margin-top:6px"><p>입력은 <b>버튼</b>이든 <b>센서</b>든 보드 안에서 똑같은 "쪽지"로 바뀌어 같은 길로 나갑니다. 그래서 나중에 센서를 붙여도 <b>웹은 고칠 필요가 없습니다.</b></p></div>
+      <aside class="notes">
+        왼쪽이 입력, 가운데가 보드, 오른쪽이 브라우저입니다. 점선으로 된 센서는 아직 연결되지 않았습니다.
+        버튼이든 센서든 보드가 같은 형식의 쪽지로 바꿔서 보내기 때문에, 브라우저 쪽은 입력이 뭔지 신경 쓰지 않습니다.
+      </aside>
+    </section>
+
+    <!-- 5. 블루투스 기초 -->
+    <section>
+      <h2><span class="num">04</span>블루투스로 어떻게 보내나</h2>
       <div class="cols wide-left">
-<pre class="log"><code class="language-plaintext" data-trim>
-[I2C] scan: 0x6A
-[IMU] 감지 실패 — 배선/주소/모델 확인 후 재시도
-[IMU] 0x6A reg0x0F=FF reg0x75=FF reg0x00=61
-</code></pre>
-        <ul class="small">
-          <li><code>0x6A</code>는 IMU가 아닌 <b>보드의 전원 관리 칩</b></li>
-          <li>NU40 DK에는 IMU가 없음 → 외부 모듈 필요</li>
-          <li>펌웨어가 IMU를 기다리느라 <b>BLE 광고도 안 함</b></li>
-        </ul>
+        <dl class="terms">
+          <dt>BLE</dt><dd>Bluetooth Low Energy. <b>전기를 아주 적게 쓰는 블루투스.</b> 스마트워치·무선 이어폰에서 쓰는 방식</dd>
+          <dt>광고</dt><dd>보드가 주변에 <b>"나 여기 있어요! 이름은 AirBand-R"</b>이라고 계속 외치는 것. 그래서 브라우저 목록에 이름이 뜸</dd>
+          <dt>연결</dt><dd>브라우저가 목록에서 골라 <b>1:1로 짝을 맺는 것</b></dd>
+          <dt>NUS</dt><dd>Nordic UART Service. 보드와 기기 사이에 <b>문자 메시지 주고받는 통로</b>를 여는 표준 방식</dd>
+          <dt>notify</dt><dd>보드가 새 소식이 생기면 <b>먼저 밀어서 보내는 것</b> (휴대폰 푸시 알림처럼)</dd>
+          <dt>연결 간격</dt><dd>둘이 <b>몇 ms마다 소식을 주고받나</b>. 7.5~15ms로 요청 → 짧을수록 빨리 도착</dd>
+        </dl>
+        <div>
+          <div class="card" style="background:var(--accent-soft); border-color:#bfdbfe">
+            <h3>📱 비유: 단톡방</h3>
+            <p>① 보드가 "방 열었어요"라고 알림 (광고)<br>② 브라우저가 방에 들어감 (연결)<br>③ "새 메시지 알림 켜기" (notify 구독)<br>④ 버튼 누를 때마다 보드가 메시지 보냄</p>
+          </div>
+          <p class="xs dim" style="margin-top:14px">ms(밀리초) = 1/1000초. 15ms는 눈 깜빡이는 시간(약 100~150ms)보다 10배 빠름</p>
+        </div>
       </div>
-      <div class="card" style="margin-top:24px">
-        <p>💡 덤: LSM6DS 계열 IMU는 기본 주소가 0x6A라 이 보드에서는 <b>SA0 → 3V3 (0x6B)</b>로 써야 충돌이 없습니다.</p>
-      </div>
+      <aside class="notes">
+        블루투스 용어를 단톡방에 비유해 보겠습니다. 보드가 방을 열었다고 알리는 게 '광고'이고, 브라우저가 들어가는 게 '연결',
+        알림을 켜는 게 'notify 구독'입니다. 그 뒤로 버튼을 누를 때마다 보드가 메시지를 보냅니다.
+        메시지를 확인하는 주기가 '연결 간격'인데, 7.5에서 15ms로 아주 짧게 요청했습니다.
+      </aside>
     </section>
 
-    <!-- 7. 방향 전환 -->
+    <!-- 6. 8바이트 쪽지 -->
     <section>
-      <h2><span class="num">06</span>방향 전환: 보드 버튼 4개로 드럼</h2>
-      <p class="small">센서만 빼고 <strong>나머지 경로 전체를 먼저 검증</strong>합니다.</p>
-      <div class="pad-row">
-        <div style="color:var(--snare)"><b>스네어</b><span>버튼 1 · 키 1</span></div>
-        <div style="color:var(--kick)"><b>킥</b><span>버튼 2 · 키 2</span></div>
-        <div style="color:var(--hihat)"><b>하이햇</b><span>버튼 3 · 키 3</span></div>
-        <div style="color:var(--tom)"><b>탐</b><span>버튼 4 · 키 4</span></div>
+      <h2><span class="num">05</span>보내는 내용: 8칸짜리 쪽지</h2>
+      <p class="small" style="margin:0 0 4px">예: <b>보드 버튼 2(킥)</b>를 눌렀을 때 보내는 쪽지</p>
+      <div class="bytes">
+        <div class="hand"><div class="v">0</div><div class="n">칸 0</div></div>
+        <div class="mode"><div class="v">0</div><div class="n">칸 1</div></div>
+        <div class="cls"><div class="v">1</div><div class="n">칸 2</div></div>
+        <div class="vel"><div class="v">100</div><div class="n">칸 3</div></div>
+        <div class="ts"><div class="v">5</div><div class="n">칸 4</div></div>
+        <div class="ts"><div class="v">183</div><div class="n">칸 5</div></div>
+        <div class="ts"><div class="v">1</div><div class="n">칸 6</div></div>
+        <div class="ts"><div class="v">0</div><div class="n">칸 7</div></div>
       </div>
-      <div class="cols">
-        <ul class="small">
-          <li>IMU 3회 탐색 후 없으면 <b>버튼 전용 모드</b></li>
-          <li>눌리는 순간만 전송, 디바운스 25ms, 세기 100 고정</li>
-          <li>패킷 형식 동일 → IMU 달아도 <b>웹앱 수정 0줄</b></li>
-        </ul>
-<pre class="log"><code class="language-plaintext" data-trim>
-[IMU] 없음 — 버튼 전용 모드로 동작
-[BTN] 버튼 1~4 → 드럼 0~3
-[BLE] 광고 시작: AirBand-R
-</code></pre>
-      </div>
+      <div class="bytes-label"><span>손</span><span>모드</span><span>드럼 종류</span><span>세기</span><span>시각 (4칸을 합쳐 큰 숫자 하나)</span></div>
+      <table style="margin-top:18px">
+        <thead><tr><th>칸</th><th>뜻</th><th>값의 의미</th></tr></thead>
+        <tbody>
+          <tr><td>0 손</td><td>어느 손인가</td><td>0 = 오른손 (나중에 왼손 보드는 1)</td></tr>
+          <tr><td>1 모드</td><td>어떤 악기 모드인가</td><td>0 = 드럼 (나중에 다른 악기 추가 가능)</td></tr>
+          <tr><td>2 드럼 종류</td><td>무슨 드럼인가</td><td>0 스네어 · 1 킥 · 2 하이햇 · 3 탐</td></tr>
+          <tr><td>3 세기</td><td>얼마나 세게</td><td>1(아주 약하게) ~ 127(가장 세게). 전자 악기 표준(MIDI)과 같은 범위</td></tr>
+          <tr><td>4~7 시각</td><td>언제 쳤나</td><td>보드가 켜진 뒤 흐른 시간(ms). 위 예시는 112,389ms ≈ 1분 52초</td></tr>
+        </tbody>
+      </table>
+      <aside class="notes">
+        보드가 보내는 쪽지는 8칸짜리입니다. 한 칸에는 0부터 255까지 숫자 하나만 들어갑니다. 이 한 칸을 '바이트'라고 부릅니다.
+        버튼 2를 누르면 오른손, 드럼, 킥, 세기 100이 들어가고, 나머지 4칸에는 언제 눌렀는지가 들어갑니다.
+      </aside>
     </section>
 
-    <!-- 8. 데모 화면 -->
+    <!-- 7. 쪽지 용어 풀이 -->
     <section>
-      <h2><span class="num">07</span>웹앱</h2>
-      <img class="shot" src="images/02-playing.png" alt="연주 중인 웹앱" style="height:520px; width:auto; display:block; margin:0 auto">
-      <p class="dim small" style="text-align:center">드럼마다 위치·색이 다른 물결 · 누른 패드가 빛남 · 입력 출처(보드/화면) 로그</p>
+      <h2><span class="num">06</span>쪽지 속 어려운 말 풀이</h2>
+      <dl class="terms" style="font-size:0.7em">
+        <dt>바이트(byte)</dt><dd>숫자 <b>0~255 하나</b>를 담는 칸. 8바이트 = 칸 8개. 문자 메시지 한 통보다 훨씬 작아서 빠르게 보냄</dd>
+        <dt>millis()</dt><dd>보드가 켜진 뒤 흐른 시간을 ms로 알려 주는 <b>보드 속 스톱워치</b></dd>
+        <dt>시각이 4칸인 이유</dt><dd>112,389는 한 칸(최대 255)에 안 들어감 → <b>4칸에 나눠 담음</b>. 4칸이면 약 49일까지 셀 수 있음</dd>
+        <dt>LE (little-endian)</dt><dd>나눠 담을 때 <b>작은 자리부터</b> 적는 규칙. 보드와 브라우저가 같은 규칙을 써야 숫자를 제대로 다시 합침</dd>
+        <dt>uint32</dt><dd>"음수 없는 32비트(=4바이트) 정수"라는 자료형 이름</dd>
+        <dt>MIDI velocity</dt><dd>전자 키보드·드럼이 "건반을 얼마나 세게 눌렀나"를 1~127로 표현하는 <b>업계 표준</b></dd>
+      </dl>
+      <div class="easy"><p>112,389를 4칸에 나누는 것은 숫자를 <b>자리별로 나눠 적는 것</b>과 같습니다. 다만 10진법이 아니라 256진법이라 [5, 183, 1, 0]이 됩니다. (5 + 183×256 + 1×65,536 = 112,389)</p></div>
+      <aside class="notes">
+        시각은 숫자가 커서 한 칸에 안 들어갑니다. 그래서 4칸에 나눠 담는데, 작은 자리부터 담는 규칙을 little-endian이라고 합니다.
+        보드와 브라우저가 같은 규칙을 써야 원래 숫자로 되돌릴 수 있습니다.
+      </aside>
     </section>
 
-    <!-- 9. 소리 -->
+    <!-- 8. 센서로 타격 감지 -->
     <section>
-      <h2><span class="num">08</span>받자마자 소리 내기</h2>
+      <h2><span class="num">07</span>센서로 "쳤다!"를 알아채는 법 <span class="xs dim" style="font-weight:500">(센서 연결 후 동작)</span></h2>
       <div class="cols">
         <div>
-          <ul class="small">
-            <li>시작할 때 드럼 4개를 모두 <code>AudioBuffer</code>로 준비</li>
-            <li>타격 오면 <code>start()</code>만 호출 (fetch·디코딩 없음)</li>
-            <li>wav가 없으면 <b>코드로 합성</b> → 에셋 없이 동작</li>
-            <li>세기 → 볼륨: <code>(v/127)^1.6</code> 곡선</li>
-          </ul>
+          <svg viewBox="0 0 460 250" style="width:100%" font-family="Noto Sans KR, sans-serif">
+            <line x1="40" y1="215" x2="450" y2="215" stroke="#94a3b8"/>
+            <line x1="40" y1="20" x2="40" y2="215" stroke="#94a3b8"/>
+            <text x="8" y="30" font-size="13" fill="#64748b">g</text>
+            <text x="400" y="238" font-size="13" fill="#64748b">시간 →</text>
+            <line x1="40" y1="140" x2="450" y2="140" stroke="#b45309" stroke-dasharray="6 5" stroke-width="2"/>
+            <text x="352" y="132" font-size="14" fill="#b45309" font-weight="700">문턱 2.5g</text>
+            <polyline fill="none" stroke="#2563eb" stroke-width="3" points="40,190 70,192 100,188 130,185 160,150 190,60 220,120 250,178 280,150 310,172 340,188 370,190 400,191 450,190"/>
+            <circle cx="190" cy="60" r="8" fill="#16a34a"/>
+            <text x="204" y="56" font-size="15" fill="#16a34a" font-weight="700">꼭대기 = 타격!</text>
+            <circle cx="280" cy="150" r="6" fill="#94a3b8"/>
+            <text x="292" y="202" font-size="12" fill="#64748b">튕김: 문턱 아래 → 무시</text>
+            <text x="60" y="180" font-size="12" fill="#64748b">가만히 ≈ 1g</text>
+          </svg>
+        </div>
+        <dl class="terms">
+          <dt>100Hz 샘플링</dt><dd>1초에 <b>100번(10ms마다)</b> 센서 값을 읽음. 1초에 100장 사진 찍기</dd>
+          <dt>g</dt><dd>중력 단위. 가만히 있어도 1g, 휘두르다 멈추면 <b>수 g ~ 10g 이상</b></dd>
+          <dt>국소 최대값</dt><dd>그래프의 <b>산꼭대기</b>. 올라가다 내려가기 시작한 지점</dd>
+          <dt>임계값 2.5g</dt><dd>이걸 넘어야 타격으로 인정하는 <b>문턱</b>. 걷기·손 흔들기 무시용</dd>
+          <dt>불응기 60ms</dt><dd>한 번 친 직후 0.06초는 <b>귀 막기</b>. 스틱 튕김을 두 번 친 걸로 세지 않게</dd>
+          <dt>세기</dt><dd>꼭대기 높이로 결정: 2.5g → 1, 12g 이상 → 127</dd>
+        </dl>
+      </div>
+      <aside class="notes">
+        센서를 붙이면 이렇게 동작합니다. 1초에 100번 흔들림의 크기를 재서, 문턱 2.5g를 넘는 산꼭대기가 나오면 '쳤다'고 판단합니다.
+        꼭대기가 높을수록 세게 친 것이고, 친 직후의 작은 튕김은 무시합니다.
+      </aside>
+    </section>
+
+    <!-- 9. 전송 분리 -->
+    <section>
+      <h2><span class="num">08</span>느려지지 않게 하는 비결: 일을 나눈다</h2>
+      <div class="flow" style="margin-bottom:18px">
+        <div class="step"><div class="big">🧑‍🍳</div><b>주문받는 사람</b><span>loop()<br>버튼·센서를 계속 확인</span></div>
+        <div class="arrow">▶</div>
+        <div class="step" style="background:var(--warn-soft); border-color:#fde68a"><div class="big">📥</div><b>주문서 꽂이</b><span>큐(queue)<br>8장까지 쌓아 둠</span></div>
+        <div class="arrow">▶</div>
+        <div class="step"><div class="big">🛵</div><b>배달원</b><span>bleSendLoop()<br>하나씩 꺼내 블루투스로 전송</span></div>
+      </div>
+      <div class="cols">
+        <div class="easy" style="margin-top:0"><p>블루투스 전송은 길이 막히면 <b>최대 0.1초</b>까지 기다립니다. 주문받는 사람이 배달까지 직접 하면 그동안 <b>다음 버튼을 놓칩니다.</b> 그래서 주문서만 꽂고 바로 돌아옵니다.</p></div>
+        <dl class="terms">
+          <dt>FreeRTOS</dt><dd>보드 안의 아주 작은 운영체제. <b>여러 일을 동시에</b> 돌리게 해 줌</dd>
+          <dt>태스크</dt><dd>동시에 도는 일꾼 하나</dd>
+          <dt>대기 0</dt><dd>꽂이가 꽉 차도 <b>기다리지 않고</b> 바로 돌아옴</dd>
+        </dl>
+      </div>
+      <aside class="notes">
+        식당에 비유하면, 주문받는 사람과 배달원을 나눈 것입니다. 블루투스 전송은 가끔 0.1초까지 막힐 수 있는데,
+        그동안 버튼 확인이 멈추면 안 되니까, 버튼 쪽은 주문서만 꽂아 두고 바로 돌아오고 배달원이 따로 보냅니다.
+      </aside>
+    </section>
+
+    <!-- 10. 센서가 없었다 -->
+    <section>
+      <h2><span class="num">09</span>그런데… 센서가 없었다</h2>
+      <div class="cols">
+        <div>
+<pre><code>[I2C] scan: 0x6A
+[IMU] 감지 실패 — 재시도
+[IMU] 0x6A reg0x0F=FF reg0x75=FF</code></pre>
+          <p class="xs dim" style="margin-top:8px">보드가 켜질 때 출력한 로그</p>
+          <div class="easy"><p>보드가 부품들에게 <b>출석을 불렀더니 0x6A 한 명만 대답</b>했고, 그건 센서가 아니라 <b>보드의 전원 관리 부품</b>이었습니다. 센서를 기다리느라 보드가 <b>블루투스도 켜지 않고 멈춰</b> 있었습니다.</p></div>
+        </div>
+        <dl class="terms">
+          <dt>I2C</dt><dd>보드와 부품을 <b>선 2개</b>로 연결해 대화하는 방식</dd>
+          <dt>scan</dt><dd>연결된 부품의 <b>출석 부르기</b></dd>
+          <dt>0x6A</dt><dd>부품의 <b>번호(주소)</b>. 0x는 16진수라는 표시 (0x6A = 106)</dd>
+          <dt>WHO_AM_I</dt><dd>부품에게 <b>"너 누구야?"</b> 묻는 칸. 센서면 정해진 값으로 대답</dd>
+          <dt>FF</dt><dd>대답 없음 → 센서가 아님</dd>
+          <dt>SA0 → 3V3</dt><dd>센서 번호를 바꾸는 핀. 일부 센서는 기본 번호가 0x6A라 <b>0x6B로 바꿔야</b> 겹치지 않음</dd>
+        </dl>
+      </div>
+      <aside class="notes">
+        처음에 보드를 흔들어도 아무 반응이 없었습니다. 로그를 보니 보드에 연결된 부품이 전원 관리 칩 하나뿐이었습니다.
+        이 보드에는 모션 센서가 내장되어 있지 않아서 따로 연결해야 하는데, 아직 없었던 겁니다.
+      </aside>
+    </section>
+
+    <!-- 11. 방향 전환 -->
+    <section>
+      <h2><span class="num">10</span>그래서: 보드 버튼 4개로 먼저 쳐 보기</h2>
+      <div class="pads" style="margin-top:6px">
+        <div style="color:var(--snare)">스네어<span>버튼 1 · 키보드 1</span></div>
+        <div style="color:var(--kick)">킥<span>버튼 2 · 키보드 2</span></div>
+        <div style="color:var(--hihat)">하이햇<span>버튼 3 · 키보드 3</span></div>
+        <div style="color:var(--tom)">탐<span>버튼 4 · 키보드 4</span></div>
+      </div>
+      <div class="cols" style="margin-top:26px">
+        <ul class="small">
+          <li>센서를 3번 찾아보고 없으면 <b>버튼 모드</b>로 켜짐</li>
+          <li>버튼은 누르는 순간에만 전송, 세기는 100 고정</li>
+          <li><b>디바운스 25ms</b>: 버튼이 눌리는 순간 접점이 떨려서 여러 번 눌린 것처럼 보이는 것을 무시</li>
+        </ul>
+        <div class="easy" style="margin-top:0"><p>센서만 빼고 <b>보드 → 블루투스 → 브라우저 → 소리</b> 전체 길을 먼저 검증했습니다. 센서가 오면 입력만 바꿔 끼우면 됩니다.</p></div>
+      </div>
+      <aside class="notes">
+        센서를 기다리는 대신, 보드에 원래 달린 버튼 4개를 드럼 4개로 바꿨습니다.
+        이렇게 하면 센서 말고 나머지 전 구간이 제대로 동작하는지 먼저 확인할 수 있습니다.
+      </aside>
+    </section>
+
+    <!-- 12. 웹앱 화면 -->
+    <section>
+      <h2><span class="num">11</span>브라우저 화면</h2>
+      <div class="cols wide-left" style="align-items:center">
+        <img class="shot" src="images/02-playing.png" alt="연주 중인 웹앱" style="width:100%">
+        <ul class="small">
+          <li><b>센서 연결</b>: 보드와 블루투스 짝 맺기</li>
+          <li><b>패드 4개</b>: 누른 드럼이 반짝 (마우스·키보드로도 칠 수 있음)</li>
+          <li><b>물결</b>: 드럼마다 위치·색이 다르고 세게 칠수록 크게 퍼짐</li>
+          <li><b>숫자 3개</b>: 소리가 얼마나 빨리 나는지</li>
+          <li><b>기록</b>: 언제 · 무슨 드럼 · 세기 · 입력(보드/화면)</li>
+        </ul>
+      </div>
+      <aside class="notes">
+        브라우저 화면입니다. 센서 연결 버튼으로 보드와 연결하고, 보드 버튼을 누르면 해당 패드가 반짝이고 소리가 납니다.
+        보드가 없어도 마우스나 키보드 1~4로 칠 수 있어서 시연용으로도 씁니다.
+      </aside>
+    </section>
+
+    <!-- 13. 소리 -->
+    <section>
+      <h2><span class="num">12</span>소리는 어떻게 내나</h2>
+      <div class="cols">
+        <div>
+          <div class="easy" style="margin-top:0"><p>칠 때마다 소리를 새로 만들면 늦습니다. 그래서 <b>페이지가 열릴 때 드럼 4개 소리를 미리 만들어 두고</b>, 신호가 오면 <b>재생 버튼만 누릅니다.</b> 노래방 반주를 미리 받아 두는 것과 같습니다.</p></div>
+          <p class="small" style="margin-top:18px">소리 파일이 없어도 <b>코드로 드럼 소리를 합성</b>합니다.</p>
         </div>
         <table>
-          <thead><tr><th>드럼</th><th>합성</th></tr></thead>
+          <thead><tr><th>드럼</th><th>만드는 법</th></tr></thead>
           <tbody>
-            <tr><td style="color:var(--snare)"><b>스네어</b></td><td>220→160Hz 사인 + 고역 노이즈</td></tr>
-            <tr><td style="color:var(--kick)"><b>킥</b></td><td>150→45Hz 급하강 사인 + 클릭</td></tr>
-            <tr><td style="color:var(--hihat)"><b>하이햇</b></td><td>5kHz 이상 노이즈, 0.12초</td></tr>
-            <tr><td style="color:var(--tom)"><b>탐</b></td><td>180→110Hz 사인 + 약한 노이즈</td></tr>
+            <tr><td style="color:var(--snare)"><b>스네어</b></td><td>"둥" (낮은 음) + "치" (잡음)</td></tr>
+            <tr><td style="color:var(--kick)"><b>킥</b></td><td>아주 낮은 "쿵" — 음이 뚝 떨어짐</td></tr>
+            <tr><td style="color:var(--hihat)"><b>하이햇</b></td><td>짧고 높은 "츳" 잡음</td></tr>
+            <tr><td style="color:var(--tom)"><b>탐</b></td><td>킥보다 높은 "둥"</td></tr>
           </tbody>
         </table>
       </div>
+      <p class="xs dim" style="margin-top:22px">세기 → 볼륨: 사람 귀는 작은 소리 차이에 민감해서 곡선으로 바꿈 (세기 100 → 볼륨 68%)</p>
+      <aside class="notes">
+        소리는 미리 만들어 두고 재생만 합니다. 그래서 신호를 받고 재생하기까지 0.1ms밖에 안 걸립니다.
+        드럼 소리 파일이 없어도 음정 있는 소리와 잡음을 섞어서 코드로 드럼 소리를 만듭니다.
+      </aside>
     </section>
 
-    <!-- 10. 지연 -->
+    <!-- 14. 지연 -->
     <section>
-      <h2><span class="num">09</span>지연은 어디서 생기나</h2>
-      <div class="cols three" style="margin-bottom:30px">
+      <h2><span class="num">13</span>얼마나 빨리 소리가 나나</h2>
+      <div class="cols three" style="margin-bottom:22px">
         <div class="card">
           <div class="kpi" style="color:var(--ok)">0.1<small>ms</small></div>
-          <div class="kpi-label">수신 → 재생 호출 (브라우저 처리)</div>
+          <p style="margin-top:10px"><b>신호 받고 → 재생 누르기</b><br>브라우저 안 처리 시간. 거의 0</p>
         </div>
-        <div class="card warn">
+        <div class="card" style="background:var(--warn-soft); border-color:#fde68a">
           <div class="kpi" style="color:var(--warn)">58<small>ms</small></div>
-          <div class="kpi-label">오디오 출력 버퍼 (Windows Chrome)</div>
+          <p style="margin-top:10px"><b>재생 → 스피커에서 소리</b><br>윈도우가 소리를 스피커로 내보내기까지 대기줄</p>
         </div>
         <div class="card">
           <div class="kpi" style="color:var(--dim)">—</div>
-          <div class="kpi-label">BLE 지터 (보드 연결 시 측정)</div>
+          <p style="margin-top:10px"><b>블루투스 흔들림(지터)</b><br>평소보다 몇 ms 늦게 왔나. 보드 연결 시 표시</p>
         </div>
       </div>
-      <ul class="small">
-        <li>브라우저 안 처리는 1ms 미만 → 남은 지연은 대부분 <b>OS 오디오 버퍼</b></li>
-        <li>블루투스 이어폰이면 100ms+ → 시연은 <b>유선 스피커</b></li>
-        <li>보드·브라우저 시계가 달라 절대 지연 대신 <b>지터(상대값)</b>를 표시</li>
-      </ul>
+      <div class="easy"><p>늦어지는 건 대부분 <b>컴퓨터 스피커 쪽</b>입니다. <b>블루투스 이어폰</b>을 쓰면 여기에 0.1초 이상 더 늦어지니, 시연할 때는 <b>유선 스피커</b>가 좋습니다.</p></div>
+      <aside class="notes">
+        소리가 나기까지 걸리는 시간을 세 부분으로 나눠 보여 줍니다. 브라우저 처리는 0.1ms로 거의 0이고,
+        대부분은 윈도우가 소리를 스피커로 내보내는 58ms입니다. 블루투스 이어폰은 더 느리니 유선 스피커를 권합니다.
+      </aside>
     </section>
 
-    <!-- 11. 모바일 -->
+    <!-- 15. 폰 -->
     <section>
-      <h2><span class="num">10</span>모바일 · 브라우저 지원</h2>
-      <div class="cols wide-right" style="align-items:center">
-        <img class="shot" src="images/06-mobile-dark.png" alt="모바일 다크 모드" style="height:520px; width:auto; justify-self:center">
+      <h2><span class="num">14</span>폰에서도 되나요?</h2>
+      <div class="cols" style="grid-template-columns: 1fr 1.5fr; align-items:center">
+        <img class="shot" src="images/06-mobile-dark.png" alt="모바일 화면" style="height:500px; width:auto; justify-self:center">
         <div>
           <table>
-            <thead><tr><th>환경</th><th>지원</th></tr></thead>
+            <thead><tr><th>기기 · 브라우저</th><th>동작</th></tr></thead>
             <tbody>
-              <tr><td>PC Chrome / Edge</td><td>✅</td></tr>
-              <tr><td>Android Chrome</td><td>✅</td></tr>
-              <tr><td>iOS Safari / Chrome</td><td>❌ Web Bluetooth 없음</td></tr>
-              <tr><td>Firefox</td><td>❌</td></tr>
+              <tr><td>PC 크롬 · 엣지</td><td>✅ 됨</td></tr>
+              <tr><td>안드로이드 크롬</td><td>✅ 됨</td></tr>
+              <tr><td>아이폰 (사파리 · 크롬)</td><td>❌ 애플이 웹 블루투스를 막아 둠</td></tr>
+              <tr><td>파이어폭스</td><td>❌ 웹 블루투스 미지원</td></tr>
             </tbody>
           </table>
-          <p class="dim small" style="margin-top:1em">HTTPS 또는 localhost 필수 · 다크 모드 지원</p>
+          <p class="xs dim" style="margin-top:14px">보안 때문에 웹 블루투스는 <b>https://</b> 주소나 내 컴퓨터(<b>localhost</b>)에서만 켜집니다.</p>
         </div>
       </div>
+      <aside class="notes">
+        안드로이드 폰의 크롬에서도 됩니다. 아이폰은 애플이 웹페이지의 블루투스 사용을 막아 두어서 안 됩니다.
+      </aside>
     </section>
 
-    <!-- 12. 삽질 -->
+    <!-- 16. 겪은 문제 -->
     <section>
-      <h2><span class="num">11</span>개발하며 겪은 문제</h2>
+      <h2><span class="num">15</span>만들면서 막혔던 곳</h2>
+      <table>
+        <thead><tr><th style="width:28%">증상</th><th style="width:38%">원인 (쉽게)</th><th>해결</th></tr></thead>
+        <tbody>
+          <tr><td>보드를 흔들어도 반응 없음</td><td>모션 센서가 연결되어 있지 않았음</td><td>버튼 모드 추가</td></tr>
+          <tr><td>개발 도구 설치 실패</td><td>윈도우 폴더를 리눅스(WSL)에서 쓸 때 권한 정보가 없었음</td><td>WSL 설정(wsl.conf) 수정 후 재시작</td></tr>
+          <tr><td>코드를 고쳐도 화면이 그대로</td><td>윈도우 폴더 파일 변경을 개발 서버가 알아채지 못함</td><td>주기적으로 직접 확인(폴링)하게 설정</td></tr>
+          <tr><td>물결이 타원으로 찌그러짐</td><td>그림판 크기를 처음에 한 번만 잼</td><td>크기 바뀔 때마다 다시 재게 수정</td></tr>
+          <tr><td>보드 버튼이 안 먹는 것 같음</td><td>브라우저와 <b>블루투스 연결 전</b>에는 보드가 아무것도 안 보냄</td><td>진단으로 버튼 정상 확인 + 화면에 "먼저 연결하세요" 안내</td></tr>
+        </tbody>
+      </table>
+      <aside class="notes">
+        만들면서 막혔던 부분들입니다. 특히 마지막은, 보드 버튼 신호가 브라우저와 연결된 다음에만 전송된다는 점이라,
+        화면에 먼저 연결하라는 안내를 넣었습니다.
+      </aside>
+    </section>
+
+    <!-- 17. 다음 단계 -->
+    <section>
+      <h2><span class="num">16</span>다음 단계</h2>
+      <div class="flow">
+        <div class="step"><div class="big">🔌</div><b>① 센서 연결</b><span>선 4개로 IMU 연결<br>보드가 자동 인식</span></div>
+        <div class="arrow">▶</div>
+        <div class="step"><div class="big">🎚️</div><b>② 감도 맞추기</b><span>문턱·세기 숫자 조정</span></div>
+        <div class="arrow">▶</div>
+        <div class="step"><div class="big">🤖</div><b>③ AI 동작 구분</b><span>TinyML: 보드 안의<br>아주 작은 AI</span></div>
+        <div class="arrow">▶</div>
+        <div class="step"><div class="big">🙌</div><b>④ 양손</b><span>보드 하나 더<br>(쪽지에 손 칸 있음)</span></div>
+      </div>
+      <div class="easy"><p><b>TinyML</b>은 보드처럼 작은 기기 안에서 돌아가는 AI입니다. 스네어·하이햇·탐을 칠 때의 <b>동작 모양을 학습</b>시켜 두면, 버튼 없이 휘두르는 모양만 보고 드럼 종류를 맞힙니다.</p></div>
+      <aside class="notes">
+        다음 단계는 센서를 연결하고, 감도를 맞추고, 작은 AI로 동작을 구분하고, 마지막으로 양손으로 확장하는 것입니다.
+      </aside>
+    </section>
+
+    <!-- 18. 직접 해 보기 -->
+    <section>
+      <h2><span class="num">17</span>직접 해 보기</h2>
       <div class="cols">
         <div class="card">
-          <h3>npm install → EPERM chmod</h3>
-          <p>WSL의 <code>/mnt/c</code>가 권한 정보 없이 마운트됨 → <code>wsl.conf</code>에 <code>metadata</code> 옵션 추가</p>
+          <h3>🖱️ 보드 없이</h3>
+          <p>① 크롬에서 <a href="https://hex-aragon.github.io/air-band/" target="_blank" rel="noopener"><b>hex-aragon.github.io/air-band</b></a> 열기<br>② 화면 패드 클릭, 또는 키보드 <b>1 · 2 · 3 · 4</b><br>🥁 리듬 게임: <a href="https://hex-aragon.github.io/air-band/rhythm.html" target="_blank" rel="noopener">/air-band/rhythm.html</a></p>
         </div>
-        <div class="card">
-          <h3>코드를 고쳐도 반영 안 됨</h3>
-          <p><code>/mnt/c</code>는 변경 알림이 안 옴 → Vite <code>watch.usePolling</code></p>
-        </div>
-        <div class="card">
-          <h3>물결이 타원으로 찌그러짐</h3>
-          <p>캔버스 크기를 한 번만 잼 → <code>ResizeObserver</code>로 교체</p>
-        </div>
-        <div class="card">
-          <h3>I2C 0x6A 충돌</h3>
-          <p>보드 전원 칩이 0x6A 사용 → IMU는 0x68 / 0x6B</p>
+        <div class="card" style="background:var(--accent-soft); border-color:#bfdbfe">
+          <h3>🟦 보드로</h3>
+          <p>① 보드를 USB로 연결<br>② <b>센서 연결</b> → <b>AirBand-R</b> → <b>페어링</b><br>③ 상태가 "연결됨"으로 바뀌면<br>④ 보드 버튼 <b>1~4</b> 누르기</p>
         </div>
       </div>
+      <p class="xs dim" style="margin-top:24px">연결 전에는 보드 버튼을 눌러도 소리가 나지 않습니다 (보드가 보낼 곳이 없어서). 보드의 LED1만 깜빡입니다.</p>
+      <aside class="notes">
+        직접 해 보는 방법입니다. 보드 없이도 화면이나 키보드로 칠 수 있고, 보드로 치려면 먼저 센서 연결을 눌러 AirBand-R과 연결해야 합니다.
+      </aside>
     </section>
 
-    <!-- 13. 다음 단계 -->
+    <!-- 19. 용어 사전 -->
     <section>
-      <h2><span class="num">12</span>다음 단계</h2>
-      <div class="flow">
-        <span>① IMU 연결</span><i>→</i>
-        <span>② 임계값 튜닝</span><i>→</i>
-        <span>③ TinyML 동작 분류</span><i>→</i>
-        <span>④ 왼손 추가</span>
+      <h2><span class="num">📖</span>용어 한 장 정리</h2>
+      <div class="cols">
+        <dl class="terms" style="font-size:0.58em">
+          <dt>IMU</dt><dd>움직임(가속도·회전)을 재는 센서</dd>
+          <dt>I2C</dt><dd>선 2개로 부품과 대화하는 방식</dd>
+          <dt>g</dt><dd>중력 단위. 가만히 = 1g</dd>
+          <dt>100Hz</dt><dd>1초에 100번</dd>
+          <dt>ms</dt><dd>1/1000초</dd>
+          <dt>임계값</dt><dd>넘어야 인정되는 문턱</dd>
+          <dt>불응기</dt><dd>친 직후 잠깐 무시하는 시간</dd>
+          <dt>디바운스</dt><dd>버튼 떨림 무시</dd>
+          <dt>FreeRTOS</dt><dd>보드 속 작은 운영체제</dd>
+          <dt>큐</dt><dd>일꾼끼리 쓰는 주문서 꽂이</dd>
+        </dl>
+        <dl class="terms" style="font-size:0.58em">
+          <dt>BLE</dt><dd>전기를 적게 쓰는 블루투스</dd>
+          <dt>광고</dt><dd>"나 여기 있어요" 외치기</dd>
+          <dt>NUS</dt><dd>메시지 주고받는 표준 통로</dd>
+          <dt>notify</dt><dd>보드가 먼저 보내는 알림</dd>
+          <dt>바이트</dt><dd>0~255 숫자 하나 담는 칸</dd>
+          <dt>little-endian</dt><dd>큰 숫자를 작은 자리부터 나눠 담기</dd>
+          <dt>MIDI velocity</dt><dd>악기 세기 표준 (1~127)</dd>
+          <dt>millis()</dt><dd>보드 속 스톱워치</dd>
+          <dt>Web Bluetooth</dt><dd>웹페이지가 블루투스를 쓰는 기능</dd>
+          <dt>TinyML</dt><dd>작은 기기 안에서 도는 AI</dd>
+        </dl>
       </div>
-      <ul class="small" style="margin-top:1.2em">
-        <li><b>IMU</b>: MPU-6050(0x68) / LSM6DS3(0x6B)를 P0.26·P0.27에 연결 → 자동 감지, 버튼과 공존</li>
-        <li><b>튜닝</b>: 시리얼의 <code>peak=</code> 값으로 임계값·최대 세기 조정</li>
-        <li><b>TinyML</b>: 100Hz CSV → Edge Impulse 학습 → <code>classifyHit()</code> 교체</li>
-        <li><b>양손</b>: 패킷에 이미 hand 필드 → 보드 하나 더</li>
-      </ul>
-    </section>
-
-    <!-- 14. 데모 -->
-    <section class="title-slide">
-      <span class="pill">라이브 데모</span>
-      <h1 style="margin-top:0.5em">직접 쳐 보기</h1>
-<pre><code class="language-bash" data-trim>
-cd air-band/web && npm install && npm run dev   # http://localhost:5173
-</code></pre>
-      <ul class="small">
-        <li>보드 없이: 패드 클릭 또는 키보드 <code>1</code>~<code>4</code></li>
-        <li>보드로: <b>센서 연결</b> → <code>AirBand-R</code> → 보드 버튼 1~4</li>
-      </ul>
     </section>
 
   </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.1.0/reveal.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.1.0/plugin/highlight/highlight.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.1.0/plugin/notes/notes.min.js"></script>
 <script>
   Reveal.initialize({
     width: 1280,
     height: 720,
-    margin: 0.06,
+    margin: 0.05,
     hash: true,
     slideNumber: 'c/t',
     transition: 'fade',
     center: false,
-    plugins: [RevealHighlight, RevealNotes],
+    plugins: [RevealNotes],
   });
 </script>
 </body>
