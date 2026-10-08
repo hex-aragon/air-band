@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Air Band 드럼 키트</title>
+    <style>
+      :root {
+        --bg: #f6f7f9;
+        --panel: #ffffff;
+        --text: #16181d;
+        --dim: #6b7280;
+        --line: #e3e5ea;
+        --accent: #2563eb;
+        --ok: #16a34a;
+        --warn: #b45309;
+        --warn-bg: #fef3c7;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0f1115;
+          --panel: #171a20;
+          --text: #e8eaef;
+          --dim: #8b93a1;
+          --line: #262a33;
+          --accent: #60a5fa;
+          --ok: #4ade80;
+          --warn: #fbbf24;
+          --warn-bg: #3a2c0a;
+        }
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font: 15px/1.45 system-ui, -apple-system, 'Segoe UI', 'Noto Sans KR', sans-serif;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px 12px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
+      }
+      h1 { font-size: 17px; margin: 0 8px 0 0; }
+      button, .btn {
+        font: inherit;
+        padding: 8px 14px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--text);
+        cursor: pointer;
+        text-decoration: none;
+      }
+      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+      button:disabled { opacity: 0.5; cursor: default; }
+      label { display: flex; align-items: center; gap: 6px; color: var(--dim); font-size: 14px; cursor: pointer; }
+      .meta { color: var(--dim); font-size: 13px; }
+      .meta b { color: var(--text); font-weight: 600; }
+      #status[data-state='connected'] { color: var(--ok); }
+      .spacer { flex: 1; }
+      #support { margin: 0; padding: 10px 16px; background: var(--warn-bg); color: var(--warn); }
+      /* 무대는 테마와 상관없이 어둡게 (드럼 색이 잘 보이도록) */
+      #stage { flex: 1; position: relative; min-height: 0; background: #07080b; }
+      #kit { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
+      @media (max-width: 560px) {
+        header { padding: 10px 12px; gap: 8px; }
+        h1 { font-size: 15px; }
+        button, .btn { padding: 6px 10px; font-size: 14px; }
+        .hide-sm { display: none; }
+      }
+    </style>
+    <script type="module" crossorigin src="./assets/kit-Ex2zgSza.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/audio-q3PBDV62.js">
+    <link rel="modulepreload" crossorigin href="./assets/motion-Bl9O-Sw5.js">
+  </head>
+  <body>
+    <header>
+      <h1>🥁 Air Band 드럼 키트</h1>
+      <button id="connect" class="primary">센서 연결</button>
+      <button id="recenter" disabled title="키보드 C — 스틱을 스네어 위에 두고 누르기">정면 맞추기</button>
+      <label title="키보드 Z"><input type="checkbox" id="zones" /> 구역선</label>
+      <button id="full" title="키보드 F">전체 화면</button>
+      <span class="meta">상태 <b id="status" data-state="disconnected">연결 안 됨</b></span>
+      <span class="spacer"></span>
+      <a class="btn hide-sm" href="./">자유 연주</a>
+      <a class="btn hide-sm" href="rhythm.html">리듬 게임</a>
+    </header>
+    <div id="support" hidden></div>
+    <main id="stage">
+      <canvas id="kit"></canvas>
+    </main>
+  </body>
+</html>
