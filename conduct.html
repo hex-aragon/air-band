@@ -88,7 +88,8 @@
       .hud div { display: flex; flex-direction: column; }
       .hud small { color: #8b93a1; font-size: 12px; }
       .hud b { font-size: 26px; font-variant-numeric: tabular-nums; line-height: 1.1; }
-      .song { position: absolute; top: 14px; right: 16px; text-align: right; pointer-events: none; }
+      .song { position: absolute; top: 14px; right: 16px; text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+      .song select { font: inherit; font-size: 14px; background: #151820; color: #e8eaef; border: 1px solid #262a33; border-radius: 8px; padding: 5px 8px; margin-bottom: 4px; max-width: 260px; }
       .song b { display: block; font-size: 16px; }
       .song small { color: #8b93a1; }
       #message {
@@ -109,14 +110,15 @@
         .hide-sm { display: none; }
         .hud { gap: 14px; }
         .hud b { font-size: 20px; }
-        .song { display: none; }
+        .song b, .song small { display: none; }
+        .song select { max-width: 150px; font-size: 13px; }
         .modes { top: 64px; }
         .modes button { padding: 5px 10px; font-size: 13px; }
         .practice { top: 112px; left: 8px; padding: 8px; font-size: 13px; }
         #score { height: 112px; }
       }
     </style>
-    <script type="module" crossorigin src="./assets/conduct-DY0v8XvV.js"></script>
+    <script type="module" crossorigin src="./assets/conduct-BiauNmjk.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/ble-CvFzc0d1.js">
   </head>
   <body>
@@ -152,7 +154,10 @@
         <div><small>셈여림</small><b id="dyn">—</b></div>
         <div><small>마디</small><b id="bar">—</b></div>
       </div>
-      <div class="song"><b id="title"></b><small id="composer"></small></div>
+      <div class="song">
+        <select id="song" aria-label="곡 선택"></select>
+        <b id="title"></b><small id="composer"></small>
+      </div>
       <div id="message">불러오는 중…</div>
       <div class="progress"><span id="progress"></span></div>
      </div>
@@ -161,7 +166,7 @@
     <footer class="credit">
       악기 소리: FluidR3 GM (Frank Wen, MIT) ·
       <a href="https://github.com/gleitz/midi-js-soundfonts" target="_blank" rel="noopener">midi-js-soundfonts</a> (CC BY 3.0) ·
-      곡: 퍼블릭 도메인, 편곡 Air Band
+      곡: 퍼블릭 도메인 · <span id="about"></span>
     </footer>
   </body>
 </html>
