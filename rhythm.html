@@ -200,8 +200,8 @@
         .hud .score { font-size: 22px; }
       }
     </style>
-    <script type="module" crossorigin src="./assets/rhythm-CYxkowO7.js"></script>
-    <link rel="modulepreload" crossorigin href="./assets/audio-CBDkwS3f.js">
+    <script type="module" crossorigin src="./assets/rhythm-4cw6gi0x.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/audio-Di75L2-L.js">
     <link rel="modulepreload" crossorigin href="./assets/motion-Bl9O-Sw5.js">
     <link rel="modulepreload" crossorigin href="./assets/scene-CDNC2CrL.js">
   </head>
@@ -209,6 +209,7 @@
     <header>
       <h1>🥁 Air Band 리듬 게임</h1>
       <button id="connect" class="primary">센서 연결</button>
+      <button id="phone" title="보드 없이 이 폰을 스틱처럼 쥐고 휘두르기 (폰에서만)">📱 폰으로 치기</button>
       <span class="meta">상태 <b id="status" data-state="disconnected">연결 안 됨</b></span>
       <span class="spacer"></span>
       <a class="btn" href="kit.html">드럼 키트</a>
@@ -239,7 +240,7 @@
           <!-- 스틱 준비 (main.ts renderStick) -->
           <div class="stick">
             <ol>
-              <li id="step-connect">위의 <b>센서 연결</b> → AirBand-R</li>
+              <li id="step-connect">위의 <b>센서 연결</b> → AirBand-R <small>(보드가 없으면 <b>📱 폰으로 치기</b>: 폰 윗변을 앞으로 쥐고 휘두르기)</small></li>
               <li id="step-axis">처음 한 번: 스틱 끝을 천장으로 세우고 가만히 든 채 <button id="axis" disabled>축 맞추기 (A)</button> <span id="axis-msg"></span></li>
               <li id="step-center">스틱을 스네어 칠 자리에 두고 <button id="recenter" disabled>정면 맞추기 (C)</button></li>
               <li id="step-try">방향마다 한 번씩 쳐 보기 <span class="chips" id="chips"></span></li>
