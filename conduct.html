@@ -118,7 +118,7 @@
         #score { height: 112px; }
       }
     </style>
-    <script type="module" crossorigin src="./assets/conduct-BiauNmjk.js"></script>
+    <script type="module" crossorigin src="./assets/conduct-BH2I-Cyd.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/ble-CvFzc0d1.js">
   </head>
   <body>
@@ -126,7 +126,8 @@
       <h1>🎼 Air Band 지휘</h1>
       <button id="connect" class="primary">센서 연결</button>
       <button id="phone" title="보드 없이 이 폰을 지휘봉처럼 쥐기 (폰에서만)">📱 폰으로 지휘</button>
-      <button id="recenter" disabled title="키보드 C — 지휘봉을 정면(오케스트라 가운데)으로 겨누고 누르기">정면 맞추기</button>
+      <button id="axis" disabled title="키보드 A — 처음 한 번: 지휘봉 끝을 천장으로 세우고 가만히 든 채 누르기">① 축 맞추기</button>
+      <button id="recenter" disabled title="키보드 C — 지휘봉을 정면(오케스트라 가운데)으로 겨누고 누르기">② 정면 맞추기</button>
       <button id="restart" title="키보드 R">처음부터</button>
       <span class="meta">상태 <b id="status" data-state="disconnected">연결 안 됨</b></span>
       <span class="spacer"></span>
@@ -153,6 +154,8 @@
         <div><small>템포</small><b id="bpm">—</b></div>
         <div><small>셈여림</small><b id="dyn">—</b></div>
         <div><small>마디</small><b id="bar">—</b></div>
+        <div title="지휘봉 끝의 위아래 각도 — 휘두를 때 크게 바뀌어야 박이 잡힙니다"><small>위아래</small><b id="elev">—</b></div>
+        <div title="지금까지 잡힌 박 수"><small>박</small><b id="beats">0</b></div>
       </div>
       <div class="song">
         <select id="song" aria-label="곡 선택"></select>
