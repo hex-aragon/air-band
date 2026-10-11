@@ -67,8 +67,23 @@
       .spacer { flex: 1; }
       #support { margin: 0; padding: 10px 16px; background: var(--warn-bg); color: var(--warn); }
       /* 무대는 테마와 상관없이 어둡게 (공연장 느낌, 파트 색이 잘 보이도록) */
-      #stage { flex: 1; position: relative; min-height: 0; background: #07080b; color: #e8eaef; }
+      #stage { flex: 1; display: flex; flex-direction: column; min-height: 0; background: #07080b; color: #e8eaef; }
+      .hallwrap { flex: 1; position: relative; min-height: 0; }
       #hall { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+      #score { display: block; width: 100%; height: 132px; border-top: 1px solid #1c2029; }
+      .modes { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: flex; background: #151820; border: 1px solid #262a33; border-radius: 10px; padding: 3px; }
+      .modes button { background: transparent; border: 0; color: #8b93a1; padding: 6px 14px; border-radius: 7px; white-space: nowrap; }
+      .modes button[aria-pressed='true'] { background: #2563eb; color: #fff; }
+      .practice { position: absolute; top: 78px; left: 16px; display: flex; flex-direction: column; gap: 8px; background: rgba(15, 17, 21, 0.82); border: 1px solid #262a33; border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+      .practice[hidden] { display: none; }
+      .practice label { display: flex; align-items: center; gap: 8px; color: #c7ccd6; cursor: pointer; }
+      .practice input[type='range'] { width: 120px; }
+      .practice button { background: #2563eb; border-color: #2563eb; color: #fff; }
+      .judge { position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); font-size: 30px; font-weight: 800; pointer-events: none; text-shadow: 0 2px 8px #000; }
+      .lesson { text-align: left; }
+      .lesson ol { margin: 6px 0 0; padding-left: 20px; }
+      .lesson li { margin: 3px 0; font-size: 14px; color: #c7ccd6; }
+      .lesson li b { color: #e8eaef; }
       .hud { position: absolute; top: 14px; left: 16px; display: flex; gap: 22px; pointer-events: none; }
       .hud div { display: flex; flex-direction: column; }
       .hud small { color: #8b93a1; font-size: 12px; }
@@ -77,13 +92,13 @@
       .song b { display: block; font-size: 16px; }
       .song small { color: #8b93a1; }
       #message {
-        position: absolute; left: 50%; bottom: 64px; transform: translateX(-50%);
+        position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%);
         max-width: min(640px, calc(100% - 32px)); text-align: center;
         background: rgba(15, 17, 21, 0.82); border: 1px solid #262a33; border-radius: 12px;
         padding: 12px 18px; font-size: 16px;
       }
       #message small { display: block; color: #8b93a1; font-size: 13px; margin-top: 4px; }
-      .progress { position: absolute; left: 16px; right: 16px; bottom: 20px; height: 6px; background: #1c2029; border-radius: 3px; overflow: hidden; }
+      .progress { position: absolute; left: 16px; right: 16px; bottom: 10px; height: 6px; background: #1c2029; border-radius: 3px; overflow: hidden; }
       .progress span { display: block; height: 100%; width: 0; background: #60a5fa; }
       footer.credit { padding: 6px 16px; font-size: 12px; color: var(--dim); background: var(--panel); border-top: 1px solid var(--line); }
       footer.credit a { color: inherit; }
@@ -95,9 +110,13 @@
         .hud { gap: 14px; }
         .hud b { font-size: 20px; }
         .song { display: none; }
+        .modes { top: 64px; }
+        .modes button { padding: 5px 10px; font-size: 13px; }
+        .practice { top: 112px; left: 8px; padding: 8px; font-size: 13px; }
+        #score { height: 112px; }
       }
     </style>
-    <script type="module" crossorigin src="./assets/conduct-CvukGVmQ.js"></script>
+    <script type="module" crossorigin src="./assets/conduct-DY0v8XvV.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/ble-CvFzc0d1.js">
   </head>
   <body>
@@ -115,7 +134,19 @@
     </header>
     <div id="support" hidden></div>
     <main id="stage">
+     <div class="hallwrap">
       <canvas id="hall"></canvas>
+      <div class="modes" role="group" aria-label="모드">
+        <button id="mode-practice" aria-pressed="true">따라하기 연습</button>
+        <button id="mode-live" aria-pressed="false">실전 지휘</button>
+      </div>
+      <div class="practice" id="practice">
+        <label>템포 <input type="range" id="p-bpm" min="50" max="110" step="2" value="66" /> <b id="p-bpm-v">66</b></label>
+        <label><input type="checkbox" id="p-music" checked /> 음악 같이 (끄면 메트로놈만)</label>
+        <label><input type="checkbox" id="p-guide" checked /> 지휘 도형 공 보기</label>
+        <button id="p-start">▶ 연습 시작 (Enter)</button>
+      </div>
+      <div class="judge" id="judge"></div>
       <div class="hud">
         <div><small>템포</small><b id="bpm">—</b></div>
         <div><small>셈여림</small><b id="dyn">—</b></div>
@@ -124,6 +155,8 @@
       <div class="song"><b id="title"></b><small id="composer"></small></div>
       <div id="message">불러오는 중…</div>
       <div class="progress"><span id="progress"></span></div>
+     </div>
+      <canvas id="score" aria-label="악보"></canvas>
     </main>
     <footer class="credit">
       악기 소리: FluidR3 GM (Frank Wen, MIT) ·
