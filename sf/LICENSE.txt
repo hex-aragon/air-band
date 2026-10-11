@@ -1,0 +1,11 @@
+Air Band 지휘 모드 악기 소리 (public/sf/*)
+
+원본: FluidR3_GM.sf2 — Copyright (c) 2000-2002, 2008 Frank Wen. MIT License.
+변환: gleitz/midi-js-soundfonts (https://github.com/gleitz/midi-js-soundfonts), FluidR3_GM 음별 MP3, CC BY 3.0 표기.
+이 폴더에는 악보에 쓰는 음만 골라 담았다 (파일 이름 = MIDI 번호).
+
+MIT License: Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+and associated documentation files, to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
+subject to the condition that the above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
