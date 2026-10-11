@@ -145,7 +145,7 @@
         main { padding: 0 12px 40px; }
       }
     </style>
-    <script type="module" crossorigin src="./assets/tinyml-BFAiLNP7.js"></script>
+    <script type="module" crossorigin src="./assets/tinyml-CzTUARQm.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/audio-CBDkwS3f.js">
   </head>
   <body>
@@ -193,9 +193,9 @@
 
         <h3>모델 크기</h3>
         <table>
-          <tr><th>입력</th><td>방향 6개 × [좌우°, 위아래°] = 숫자 12개 (25Hz, 타격 직전 0.24초)</td></tr>
-          <tr><th>구조</th><td>12 → 은닉 16 (ReLU) → 4 (스네어 · 하이햇 · 탐 · 크래시)</td></tr>
-          <tr><th>가중치</th><td>276개 (float, 약 1.1KB). 펌웨어 빌드 크기 +2.7KB로 확인</td></tr>
+          <tr><th>입력</th><td>6번 × [좌우°, 위아래°, 그 40ms 최대 가속도 g] = 숫자 18개 (25Hz, 타격 직전 0.24초)</td></tr>
+          <tr><th>구조</th><td>18 → 은닉 16 (ReLU) → 5 (스네어 · 하이햇 · 탐 · 크래시 · 노이즈)</td></tr>
+          <tr><th>가중치</th><td>389개 (float, 약 1.5KB)</td></tr>
           <tr><th>킥</th><td>발 동작이라 모델에서 빼고 보드 버튼 2 그대로</td></tr>
         </table>
 
@@ -294,9 +294,9 @@
         <pre>// air_band_right.ino — 이미 들어가 있는 부분
 uint8_t classifyHit(const SampleBuffer&amp; buf, uint8_t peakZone) {
 #if TINYML_ACTIVE                       // zone_model.h가 있으면
-  float x[12];                          // 직전 방향 6개 (25Hz) [좌우, 위아래]
+  float x[18];                          // 직전 6번 (25Hz) [좌우, 위아래, 최대 가속도]
   ...
-  return zoneModelPredict(x);           // 모델이 드럼 결정
+  return zoneModelPredict(x);           // 모델이 드럼 결정 (노이즈면 안 보냄)
 #endif
   return peakZone;                      // 없으면 지금처럼 구역 규칙
 }</pre>
