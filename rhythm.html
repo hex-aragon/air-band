@@ -195,16 +195,60 @@
         pointer-events: none;
         color: var(--accent);
       }
+      /* 내 노래 */
+      .song { position: relative; }
+      .song .del { position: absolute; right: 10px; bottom: 8px; color: var(--dim); padding: 2px 6px; border-radius: 6px; }
+      .song .del:hover { color: var(--text); background: var(--line); }
+      .mytrack {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 12px 14px;
+        margin-top: 12px;
+        font-size: 14px;
+        display: grid;
+        gap: 8px;
+      }
+      .mytrack h3 { margin: 0; font-size: 15px; }
+      .mytrack .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .mytrack input[type='url'] { flex: 1; min-width: 180px; font: inherit; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+      .mytrack input[type='file'] { max-width: 100%; font-size: 13px; }
+      .mytrack small { color: var(--dim); font-size: 12px; }
+      .mytrack a { color: var(--accent); }
+      .mytrack [hidden] { display: none; }
+      #track-msg { color: var(--text); font-size: 13px; min-height: 1.2em; }
+      #track-msg:empty { display: none; }
+      #tap { width: 100%; padding: 22px; font-size: 20px; font-weight: 800; touch-action: manipulation; }
+      #tap.flash { animation: tapflash 0.15s; }
+      @keyframes tapflash { from { background: var(--accent); color: #fff; } }
+      /* 유튜브 영상: 오른쪽 아래 작은 창 (가리지 않게 클릭은 통과) */
+      #yt-box {
+        position: absolute;
+        right: 12px;
+        bottom: 12px;
+        width: 256px;
+        aspect-ratio: 16 / 9;
+        z-index: 3;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 4px 16px rgb(0 0 0 / 0.4);
+        background: #000;
+      }
+      #yt-box iframe { width: 100%; height: 100%; border: 0; pointer-events: none; display: block; }
+      @media (max-width: 480px) {
+        #yt-box { width: 160px; right: 8px; bottom: 8px; }
+      }
       @media (max-width: 480px) {
         .result .grid { grid-template-columns: repeat(2, 1fr); }
         .hud .score { font-size: 22px; }
       }
     </style>
-    <script type="module" crossorigin src="./assets/rhythm-B2XrDqDk.js"></script>
+    <script type="module" crossorigin src="./assets/rhythm-D1zTjaR_.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/ble-OgXbAFhe.js">
     <link rel="modulepreload" crossorigin href="./assets/audio-Cmd_TyyR.js">
     <link rel="modulepreload" crossorigin href="./assets/motion-Bl9O-Sw5.js">
     <link rel="modulepreload" crossorigin href="./assets/scene-CDNC2CrL.js">
+    <link rel="modulepreload" crossorigin href="./assets/calib-DFslUjxI.js">
   </head>
   <body>
     <header>
@@ -233,6 +277,7 @@
         </div>
       </div>
       <div class="count" id="count" hidden></div>
+      <div id="yt-box" hidden><div id="yt-player"></div></div>
 
       <!-- 곡 선택 -->
       <section class="overlay" id="menu">
@@ -244,7 +289,7 @@
             <ol>
               <li id="step-connect">위의 <b>센서 연결</b> → AirBand-R <small>(보드가 없으면 <b>📱 폰으로 치기</b>: 폰 윗변을 앞으로 쥐고 휘두르기)</small></li>
               <li id="step-axis">처음 한 번: 스틱 끝을 천장으로 세우고 가만히 든 채 <button id="axis" disabled>축 맞추기 (A)</button> <span id="axis-msg"></span></li>
-              <li id="step-center">스틱을 스네어 칠 자리에 두고 <button id="recenter" disabled>정면 맞추기 (C)</button></li>
+              <li id="step-center">스틱을 스네어 칠 자리에 두고 <button id="recenter" disabled>정면 맞추기 (C)</button> <span id="center-msg"></span></li>
               <li id="step-try">방향마다 한 번씩 쳐 보기 <span class="chips" id="chips"></span></li>
             </ol>
             <div class="aim" id="aim-now"></div>
@@ -255,6 +300,33 @@
             <b>키보드</b> · <b>D F J K</b> = 하이햇 · 스네어 · 탐 · 크래시, <b>스페이스</b> = 킥 &nbsp;|&nbsp; <b>Esc</b> 그만두기 · <b>Enter</b> 시작
           </div>
           <div class="songs" id="songs"></div>
+          <!-- 내 노래 (main.ts setupTracks) -->
+          <div class="mytrack">
+            <h3>🎵 내 노래로 치기</h3>
+            <div class="row">
+              <input type="url" id="yt-url" placeholder="유튜브 링크 붙여넣기" />
+              <button id="yt-load">불러오기</button>
+            </div>
+            <small>예: <a href="#" id="yt-example">Red Hot Chili Peppers — Dani California</a> · 소리는 유튜브 영상 그대로, 노트는 박자에 맞춘 기본 패턴 (실제 드럼 연주와 똑같지는 않음). 처음 한 번 박자를 탭으로 알려 주면 저장됩니다.</small>
+            <div id="track-sync" class="row" hidden>
+              <button id="tap-start">▶ 박자 맞추기</button>
+              <button id="tap-refine" hidden title="곡 중간에서 한 번 더 탭하면 앞의 탭과 합쳐 BPM이 더 정확해집니다">▶ 중간에서 한 번 더 (더 정확)</button>
+              <button id="tap-done" class="primary" hidden>완료 (Enter)</button>
+            </div>
+            <button id="tap" hidden>탭 — 박마다</button>
+            <div class="row">
+              <span>또는 음악 파일</span>
+              <input type="file" id="file" accept="audio/*" />
+            </div>
+            <small>내 컴퓨터의 MP3 · M4A 등. 브라우저 안에서만 분석하고 어디에도 올리지 않습니다. 킥 · 스네어 · 하이햇 소리가 난 곳에 노트를 둡니다.</small>
+            <div id="bpm-fix" class="row" hidden>
+              <small>박자가 두 배로 빠르거나 느리게 잡혔으면</small>
+              <button id="bpm-half">BPM ÷2</button>
+              <button id="bpm-double">BPM ×2</button>
+            </div>
+            <div class="row"><span>난이도</span><div class="row seg" id="opt-level"></div></div>
+            <div id="track-msg"></div>
+          </div>
           <div class="options">
             <span>화면</span>
             <div class="row seg" id="opt-view"></div>
