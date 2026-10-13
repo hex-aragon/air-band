@@ -218,6 +218,10 @@
       .mytrack [hidden] { display: none; }
       #track-msg { color: var(--text); font-size: 13px; min-height: 1.2em; }
       #track-msg:empty { display: none; }
+      .mytrack .big { width: 100%; padding: 14px; font-size: 16px; font-weight: 700; }
+      .mytrack details { border-top: 1px solid var(--line); padding-top: 8px; display: grid; gap: 8px; }
+      .mytrack details[open] > :not(summary) { margin-top: 8px; }
+      .mytrack summary { cursor: pointer; color: var(--dim); font-size: 13px; }
       #tap { width: 100%; padding: 22px; font-size: 20px; font-weight: 800; touch-action: manipulation; }
       #tap.flash { animation: tapflash 0.15s; }
       @keyframes tapflash { from { background: var(--accent); color: #fff; } }
@@ -243,11 +247,11 @@
         .hud .score { font-size: 22px; }
       }
     </style>
-    <script type="module" crossorigin src="./assets/rhythm-D1zTjaR_.js"></script>
-    <link rel="modulepreload" crossorigin href="./assets/ble-OgXbAFhe.js">
+    <script type="module" crossorigin src="./assets/rhythm-DGMubzAg.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/ble-C_Dz__IT.js">
     <link rel="modulepreload" crossorigin href="./assets/audio-Cmd_TyyR.js">
-    <link rel="modulepreload" crossorigin href="./assets/motion-Bl9O-Sw5.js">
-    <link rel="modulepreload" crossorigin href="./assets/scene-CDNC2CrL.js">
+    <link rel="modulepreload" crossorigin href="./assets/motion-D0put4hd.js">
+    <link rel="modulepreload" crossorigin href="./assets/scene-B_8wvg-9.js">
     <link rel="modulepreload" crossorigin href="./assets/calib-DFslUjxI.js">
   </head>
   <body>
@@ -303,29 +307,31 @@
           <!-- 내 노래 (main.ts setupTracks) -->
           <div class="mytrack">
             <h3>🎵 내 노래로 치기</h3>
-            <div class="row">
-              <input type="url" id="yt-url" placeholder="유튜브 링크 붙여넣기" />
-              <button id="yt-load">불러오기</button>
-            </div>
-            <small>예: <a href="#" id="yt-example">Red Hot Chili Peppers — Dani California</a> · 소리는 유튜브 영상 그대로, 노트는 박자에 맞춘 기본 패턴 (실제 드럼 연주와 똑같지는 않음). 처음 한 번 박자를 탭으로 알려 주면 저장됩니다.</small>
-            <div id="track-sync" class="row" hidden>
-              <button id="tap-start">▶ 박자 맞추기</button>
-              <button id="tap-refine" hidden title="곡 중간에서 한 번 더 탭하면 앞의 탭과 합쳐 BPM이 더 정확해집니다">▶ 중간에서 한 번 더 (더 정확)</button>
-              <button id="tap-done" class="primary" hidden>완료 (Enter)</button>
-            </div>
-            <button id="tap" hidden>탭 — 박마다</button>
-            <div class="row">
-              <span>또는 음악 파일</span>
-              <input type="file" id="file" accept="audio/*" />
-            </div>
-            <small>내 컴퓨터의 MP3 · M4A 등. 브라우저 안에서만 분석하고 어디에도 올리지 않습니다. 킥 · 스네어 · 하이햇 소리가 난 곳에 노트를 둡니다.</small>
+            <small>① 노래 파일 고르기 → ② 시작. 노래를 듣고 킥 · 스네어 · 하이햇 자리를 찾아 악보를 자동으로 만듭니다. 파일은 이 브라우저 안에서만 쓰고 어디에도 올리지 않습니다.</small>
+            <button id="file-btn" class="primary big">🎵 노래 파일 고르기 (MP3 · M4A · WAV)</button>
+            <input type="file" id="file" accept="audio/*" hidden />
+            <div id="track-msg"></div>
             <div id="bpm-fix" class="row" hidden>
-              <small>박자가 두 배로 빠르거나 느리게 잡혔으면</small>
+              <small>노트가 노래보다 두 배 빠르거나 느리면</small>
               <button id="bpm-half">BPM ÷2</button>
               <button id="bpm-double">BPM ×2</button>
             </div>
             <div class="row"><span>난이도</span><div class="row seg" id="opt-level"></div></div>
-            <div id="track-msg"></div>
+            <button id="track-start" class="primary big" hidden>▶ 이 노래로 시작</button>
+            <details id="yt-more">
+              <summary>파일이 없으면: 유튜브 링크로 (박자를 직접 탭해야 해서 조금 번거로움)</summary>
+              <div class="row">
+                <input type="url" id="yt-url" placeholder="유튜브 링크 붙여넣기" />
+                <button id="yt-load">불러오기</button>
+              </div>
+              <small>예: <a href="#" id="yt-example">Red Hot Chili Peppers — Dani California</a> · 유튜브 소리는 분석할 수 없어서, 노트는 박자에 맞춘 기본 패턴입니다. 처음 한 번 "박자 맞추기"에서 드럼이 시작되면 박마다 스페이스를 16번쯤 치고 Enter.</small>
+              <div id="track-sync" class="row" hidden>
+                <button id="tap-start">▶ 박자 맞추기</button>
+                <button id="tap-refine" hidden title="곡 중간에서 한 번 더 탭하면 앞의 탭과 합쳐 BPM이 더 정확해집니다">▶ 중간에서 한 번 더 (더 정확)</button>
+                <button id="tap-done" class="primary" hidden>완료 (Enter)</button>
+              </div>
+              <button id="tap" hidden>탭 — 박마다</button>
+            </details>
           </div>
           <div class="options">
             <span>화면</span>
