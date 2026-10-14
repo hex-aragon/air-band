@@ -5,290 +5,37 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Air Band</title>
     <style>
-      :root {
-        --bg: #f6f7f9;
-        --panel: #ffffff;
-        --text: #16181d;
-        --dim: #6b7280;
-        --line: #e3e5ea;
-        --accent: #2563eb;
-        --ok: #16a34a;
-        --warn: #b45309;
-        --warn-bg: #fef3c7;
-        --rec: #dc2626;
+      body { margin: 0; background: #0b0d13; color: #eef0f6; min-height: 100vh; }
+      main { max-width: 960px; margin: 0 auto; padding: 32px 16px 48px; }
+      h1 { font-size: 28px; margin: 0 0 6px; letter-spacing: -0.02em; }
+      .lead { color: #8f97aa; margin: 0 0 28px; font-size: 15px; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+      .card {
+        display: block; padding: 18px; border-radius: 14px; text-decoration: none; color: inherit;
+        background: #141722; border: 1px solid #222634; transition: transform 0.12s, border-color 0.12s;
       }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --bg: #0f1115;
-          --panel: #171a20;
-          --text: #e8eaef;
-          --dim: #8b93a1;
-          --line: #262a33;
-          --accent: #60a5fa;
-          --ok: #4ade80;
-          --warn: #fbbf24;
-          --warn-bg: #3a2c0a;
-          --rec: #f87171;
-        }
-      }
-      * { box-sizing: border-box; }
-      html, body { margin: 0; height: 100%; }
-      body {
-        background: var(--bg);
-        color: var(--text);
-        font: 15px/1.45 system-ui, -apple-system, 'Segoe UI', 'Noto Sans KR', sans-serif;
-        display: flex;
-        flex-direction: column;
-      }
-      header {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 12px;
-        padding: 14px 16px;
-        border-bottom: 1px solid var(--line);
-        background: var(--panel);
-      }
-      h1 { font-size: 17px; margin: 0 8px 0 0; }
-      button {
-        font: inherit;
-        padding: 8px 14px;
-        border-radius: 8px;
-        border: 1px solid var(--line);
-        background: var(--panel);
-        color: var(--text);
-        cursor: pointer;
-      }
-      .game-link {
-        padding: 8px 14px;
-        border-radius: 8px;
-        border: 1px solid var(--line);
-        color: var(--text);
-        text-decoration: none;
-      }
-      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-      button:disabled { opacity: 0.5; cursor: default; }
-      .meta { display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--dim); font-size: 13px; }
-      .meta b { color: var(--text); font-weight: 600; }
-      #status[data-state='connected'] { color: var(--ok); }
-      #support {
-        margin: 12px 16px 0;
-        padding: 10px 12px;
-        border-radius: 8px;
-        background: var(--warn-bg);
-        color: var(--warn);
-      }
-      .pads {
-        display: grid;
-        grid-template-columns: repeat(var(--cols, 4), 1fr);
-        gap: 10px;
-        padding: 12px 16px 0;
-      }
-      .pad {
-        --hue: 200;
-        padding: 14px 8px;
-        border-radius: 12px;
-        border: 2px solid hsl(var(--hue) 70% 50% / 0.5);
-        background: hsl(var(--hue) 70% 50% / 0.08);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 2px;
-        transition: background 0.12s, transform 0.06s;
-        user-select: none;
-        touch-action: manipulation;
-      }
-      .pad .name { font-size: 16px; font-weight: 600; }
-      .pad .hint { font-size: 12px; color: var(--dim); }
-      .pad.on { background: hsl(var(--hue) 75% 50% / 0.45); transform: scale(0.97); transition: none; }
-      #connect-hint {
-        margin: 12px 16px 0;
-        padding: 10px 12px;
-        border-radius: 8px;
-        background: var(--warn-bg);
-        color: var(--warn);
-        font-size: 14px;
-      }
-      #connect-hint b { color: inherit; }
-      /* 스틱 방향 (2단계) */
-      .motion {
-        margin: 12px 16px 0;
-        border: 1px solid var(--line);
-        border-radius: 12px;
-        background: var(--panel);
-        overflow: hidden;
-      }
-      .motion .bar {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 8px 14px;
-        padding: 8px 12px;
-        border-bottom: 1px solid var(--line);
-        font-size: 13px;
-      }
-      .motion .bar h2 { font-size: 13px; font-weight: 600; margin: 0; }
-      .motion .bar label { display: flex; align-items: center; gap: 6px; color: var(--dim); cursor: pointer; }
-      .motion .bar button { padding: 5px 10px; font-size: 13px; }
-      .motion .bar .help { color: var(--dim); font-size: 12px; margin-left: auto; }
-      .motion .view { position: relative; }
-      #motion { display: block; width: 100%; height: 190px; }
-      #motion-note {
-        position: absolute;
-        left: 0;
-        right: 46px;
-        bottom: 8px;
-        text-align: center;
-        font-size: 12px;
-        color: var(--warn);
-        pointer-events: none;
-      }
-      /* 연주 녹음 */
-      .rec {
-        margin: 12px 16px 0;
-        border: 1px solid var(--line);
-        border-radius: 12px;
-        background: var(--panel);
-      }
-      .rec .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 8px 12px; font-size: 13px; }
-      .rec .bar h2 { font-size: 13px; font-weight: 600; margin: 0; }
-      #rec { padding: 5px 12px; font-size: 13px; color: var(--rec); border-color: var(--rec); }
-      #rec.on { background: var(--rec); color: #fff; }
-      #rec-status { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
-      #rec-status[data-live] { color: var(--rec); font-weight: 600; }
-      #takes { list-style: none; margin: 0; padding: 0 12px 8px; max-height: 180px; overflow-y: auto; }
-      #takes li {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        padding: 6px 0;
-        border-top: 1px solid var(--line);
-        font-size: 13px;
-      }
-      #takes li.empty { color: var(--dim); font-size: 12px; }
-      #takes li.new .name { color: var(--accent); }
-      #takes .info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-      #takes .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      #takes .meta { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
-      #takes button { padding: 4px 9px; font-size: 12px; }
-      #takes button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-      #takes button.danger { color: var(--dim); }
-      main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-      #stage { flex: 1; width: 100%; min-height: 220px; display: block; }
-      .latency {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 1px;
-        background: var(--line);
-        border-top: 1px solid var(--line);
-      }
-      .latency div { background: var(--panel); padding: 10px 16px; }
-      .latency .label { font-size: 12px; color: var(--dim); }
-      .latency .value { font-size: 22px; font-variant-numeric: tabular-nums; }
-      .latency .value small { font-size: 13px; color: var(--dim); margin-left: 2px; }
-      section.log { background: var(--panel); border-top: 1px solid var(--line); padding: 8px 16px 12px; }
-      section.log h2 { font-size: 12px; color: var(--dim); font-weight: 500; margin: 0 0 4px; }
-      #log { list-style: none; margin: 0; padding: 0; max-height: 30vh; overflow-y: auto; }
-      #log li {
-        display: grid;
-        grid-template-columns: 92px 1fr 90px 32px 56px;
-        gap: 10px;
-        align-items: center;
-        padding: 3px 0;
-        font-size: 13px;
-        font-variant-numeric: tabular-nums;
-        border-bottom: 1px solid var(--line);
-      }
-      #log .src { font-size: 11px; color: var(--dim); margin-left: 4px; }
-      #log .t, #log .dim { color: var(--dim); }
-      #log .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      #log .num { text-align: right; }
-      #log .vel { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
-      #log .bar { display: block; height: 100%; background: var(--accent); }
-      @media (max-width: 480px) {
-        #log li { grid-template-columns: 84px 1fr 60px 28px; }
-        #log li .dim { display: none; }
-        .latency .value { font-size: 18px; }
-        .pads { gap: 6px; }
-        .pad { padding: 12px 4px; }
-        .pad .name { font-size: 14px; }
-        .pad .hint { font-size: 11px; }
-        .pad .keys { display: none; }
-        .motion { margin: 10px 12px 0; }
-        .motion .bar .help { display: none; }
-        #motion { height: 160px; }
-        .rec { margin: 10px 12px 0; }
-        #takes li { flex-wrap: wrap; }
-        #takes .info { flex-basis: 100%; }
-      }
+      .card:hover { transform: translateY(-2px); border-color: #7c5cff; }
+      .card .ic { font-size: 28px; }
+      .card b { display: block; font-size: 17px; margin: 8px 0 4px; }
+      .card small { color: #8f97aa; font-size: 13px; line-height: 1.5; }
+      .tip { margin-top: 28px; color: #8f97aa; font-size: 13px; line-height: 1.6; }
     </style>
-    <script type="module" crossorigin src="./assets/main---zmVMr4.js"></script>
-    <link rel="modulepreload" crossorigin href="./assets/ble-C_Dz__IT.js">
-    <link rel="modulepreload" crossorigin href="./assets/audio-Cmd_TyyR.js">
-    <link rel="modulepreload" crossorigin href="./assets/motion-D0put4hd.js">
+    <script type="module" crossorigin src="./assets/main-DoldHm5g.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/header-Dh3K5oAK.js">
+    <link rel="stylesheet" crossorigin href="./assets/header-BZ_7v_dm.css">
   </head>
   <body>
-    <header>
-      <h1>🥁 Air Band</h1>
-      <button id="connect" class="primary">센서 연결</button>
-      <button id="phone" title="보드 없이 이 폰을 스틱처럼 쥐고 휘두르기 (폰에서만)">📱 폰으로 치기</button>
-      <button id="test" title="스페이스바로도 칠 수 있습니다">테스트 타격</button>
-      <a href="kit.html" class="game-link">🥁 드럼 키트</a>
-      <a href="rhythm.html" class="game-link">🎮 리듬 게임</a>
-      <a href="tinyml.html" class="game-link">🧠 TinyML</a>
-      <a href="conduct.html" class="game-link">🎼 지휘</a>
-      <div class="meta">
-        <span>상태 <b id="status" data-state="disconnected">연결 안 됨</b></span>
-        <span>배터리 <b id="battery">—</b></span>
-        <span>소리 <b id="audio-src">로딩 중…</b></span>
-      </div>
-    </header>
-    <div id="support" hidden></div>
-    <div id="connect-hint">보드 버튼으로 치려면 먼저 <b>센서 연결</b> → <b>AirBand-R</b> 선택 → <b>페어링</b>을 눌러 연결하세요. 연결 전에는 화면 패드와 키보드 1~5만 동작합니다.</div>
-    <!-- 드럼 패드: 보드 버튼 1~4 / 키보드 1~5 / 클릭 모두 같은 소리 -->
-    <div class="pads" id="pads"></div>
-    <!-- 스틱 방향 (2단계): 보드의 IMU가 추정한 방향과 드럼 구역 -->
-    <section class="motion">
-      <div class="bar">
-        <h2>스틱 방향</h2>
-        <button id="recenter" disabled title="키보드 C">정면 맞추기</button>
-        <label><input type="checkbox" id="motion-on" checked /> 실시간 보기</label>
-        <span class="help">스틱을 스네어 자리에 두고 정면 맞추기 → 왼쪽 하이햇 · 오른쪽 탐 · 위 크래시</span>
-      </div>
-      <div class="view">
-        <canvas id="motion"></canvas>
-        <div id="motion-note" hidden></div>
-      </div>
-    </section>
-    <!-- 연주 녹음: 녹음 → 재생 · MIDI · 공유 링크 (recorder.ts) -->
-    <section class="rec">
-      <div class="bar">
-        <h2>연주 녹음</h2>
-        <button id="rec" title="키보드 R">● 녹음</button>
-        <span id="rec-status"></span>
-      </div>
-      <ol id="takes"></ol>
-    </section>
     <main>
-      <canvas id="stage"></canvas>
-      <div class="latency">
-        <div>
-          <div class="label">수신 → 재생 호출</div>
-          <div class="value"><span id="lat-proc">—</span><small>ms</small></div>
-        </div>
-        <div>
-          <div class="label">오디오 출력 버퍼</div>
-          <div class="value"><span id="lat-out">—</span><small>ms</small></div>
-        </div>
-        <div>
-          <div class="label">BLE 지터 (최소 대비)</div>
-          <div class="value"><span id="lat-jitter">—</span><small>ms</small></div>
-        </div>
+      <h1>허공에서 치는 드럼 · 지휘</h1>
+      <p class="lead">누코드 NU40 스틱(또는 폰)을 연결하고 바로 놀아 보세요. 오른쪽 위 "스틱 연결" 버튼 하나로 연결 · 맞추기를 합니다.</p>
+      <div class="grid">
+        <a class="card" href="rhythm.html"><span class="ic">🎮</span><b>리듬 게임</b><small>링이 좁혀질 때 맞춰 치기 · 내 노래 파일로 치기</small></a>
+        <a class="card" href="kit.html"><span class="ic">🥁</span><b>드럼 키트</b><small>3D 드럼 세트를 자유롭게 · 스틱 방향 확인</small></a>
+        <a class="card" href="pads.html"><span class="ic">🎛</span><b>패드 · 녹음</b><small>패드로 치고 녹음 · MIDI · 공유 링크</small></a>
+        <a class="card" href="conduct.html"><span class="ic">🎼</span><b>지휘하기</b><small>지휘봉처럼 휘둘러 오케스트라 템포 · 셈여림 조절</small></a>
+        <a class="card" href="tinyml.html"><span class="ic">🧠</span><b>TinyML 내 스윙 학습</b><small>내 스윙을 모아 브라우저에서 학습 · 보드에 넣기</small></a>
       </div>
-      <section class="log">
-        <h2>최근 타격 (시각 · 종류 · 세기 · 처리지연)</h2>
-        <ol id="log"></ol>
-      </section>
+      <p class="tip">스틱 없이도 됩니다: 키보드 · 마우스 · 터치, 또는 "📱 폰으로 치기".<br />Web Bluetooth는 PC 크롬 · 엣지, 안드로이드 크롬에서 동작합니다 (아이폰 사파리는 미지원).</p>
     </main>
   </body>
 </html>

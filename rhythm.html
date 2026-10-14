@@ -5,35 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Air Band 리듬 게임</title>
     <style>
+      /* 리듬 게임은 항상 어두운 무대 (게임 화면 느낌) */
       :root {
-        --bg: #f6f7f9;
-        --panel: #ffffff;
-        --text: #16181d;
-        --dim: #6b7280;
-        --line: #e3e5ea;
-        --accent: #2563eb;
-        --ok: #16a34a;
-        --warn: #b45309;
-        --warn-bg: #fef3c7;
-        --scrim: rgb(246 247 249 / 0.92);
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --bg: #0f1115;
-          --panel: #171a20;
-          --text: #e8eaef;
-          --dim: #8b93a1;
-          --line: #262a33;
-          --accent: #60a5fa;
-          --ok: #4ade80;
-          --warn: #fbbf24;
-          --warn-bg: #3a2c0a;
-          --scrim: rgb(15 17 21 / 0.92);
-        }
+        --bg: #0a0b10;
+        --panel: #141722;
+        --panel2: #1b1f2d;
+        --text: #eef0f6;
+        --dim: #8f97aa;
+        --line: #252a3b;
+        --accent: #7c5cff;
+        --accent2: #22c3ff;
+        --ok: #34d399;
+        --warn: #fbbf24;
+        --warn-bg: #3a2c0a;
+        --scrim: rgb(8 9 14 / 0.9);
+        color-scheme: dark;
       }
       * { box-sizing: border-box; }
-      /* display를 지정한 요소(.hud, .count)도 hidden 속성이면 확실히 숨긴다 */
-      [hidden] { display: none !important; }
       html, body { margin: 0; height: 100%; }
       body {
         background: var(--bg);
@@ -43,44 +31,24 @@
         flex-direction: column;
         overflow: hidden;
       }
-      header {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 10px 12px;
-        padding: 12px 16px;
-        border-bottom: 1px solid var(--line);
-        background: var(--panel);
-      }
-      h1 { font-size: 17px; margin: 0 8px 0 0; }
-      button, .btn {
+      button {
         font: inherit;
         padding: 8px 14px;
-        border-radius: 8px;
+        border-radius: 10px;
         border: 1px solid var(--line);
-        background: var(--panel);
+        background: var(--panel2);
         color: var(--text);
         cursor: pointer;
-        text-decoration: none;
       }
-      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-      button:disabled { opacity: 0.5; cursor: default; }
-      .meta { color: var(--dim); font-size: 13px; }
-      .meta b { color: var(--text); font-weight: 600; }
-      #status[data-state='connected'] { color: var(--ok); }
-      .spacer { flex: 1; }
+      button:hover:not(:disabled) { border-color: #3a4160; }
+      button.primary { background: linear-gradient(135deg, var(--accent), #5b8cff); border-color: transparent; color: #fff; font-weight: 700; }
+      button:disabled { opacity: 0.45; cursor: default; }
 
-      /* 게임 영역 */
-      main { flex: 1; position: relative; min-height: 0; }
+      #stage { flex: 1; position: relative; min-height: 0; overflow: hidden; background: #07080b; }
       #game, #kit { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-      /* 드럼 키트 화면: 무대가 항상 어두우므로 점수 글자도 밝게 */
-      main.kitview { background: #07080b; }
-      main.kitview .hud { color: #e8eaef; }
-      main.kitview .hud .label { color: #9aa1ad; }
-      main.kitview .hud .score { text-shadow: 0 0 8px #000; }
       .hud {
         position: absolute;
-        top: 12px;
+        top: 14px;
         left: 16px;
         right: 16px;
         display: flex;
@@ -88,184 +56,210 @@
         align-items: flex-start;
         pointer-events: none;
         font-variant-numeric: tabular-nums;
+        z-index: 4;
       }
-      .hud .score { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; text-shadow: 0 0 8px var(--bg), 0 0 2px var(--bg); }
-      .hud .label { font-size: 12px; color: var(--dim); }
+      .hud .score { font-size: 30px; font-weight: 900; letter-spacing: -0.02em; text-shadow: 0 0 12px #000; }
+      .hud .label { font-size: 12px; color: #aab1c3; }
       .hud .right { text-align: right; }
-      .progress { position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--line); }
-      .progress span { display: block; height: 100%; width: 0; background: var(--accent); }
+      .progress { position: absolute; left: 0; right: 0; top: 0; height: 4px; background: #1a1d28; z-index: 4; }
+      .progress span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
 
-      /* 메뉴 · 결과 오버레이 */
+      /* 메뉴 · 결과 */
       .overlay {
         position: absolute;
         inset: 0;
-        background: var(--scrim);
+        background: radial-gradient(1200px 500px at 50% -10%, rgb(124 92 255 / 0.22), transparent 60%), var(--scrim);
         overflow-y: auto;
-        padding: 24px 16px 40px;
+        padding: 22px 16px 120px;
+        z-index: 6;
+        backdrop-filter: blur(3px);
       }
-      .overlay .inner { max-width: 640px; margin: 0 auto; }
-      .overlay h2 { font-size: 22px; margin: 0 0 4px; }
-      .overlay .lead { color: var(--dim); margin: 0 0 18px; font-size: 14px; }
-      .songs { display: grid; gap: 10px; }
-      .song {
+      .overlay .inner { max-width: 980px; margin: 0 auto; }
+      .menu-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+      .menu-head h2 { font-size: 26px; margin: 0; letter-spacing: -0.02em; }
+      .menu-head p { margin: 2px 0 0; color: var(--dim); font-size: 14px; }
+      .stick-line { font-size: 13px; color: var(--dim); background: var(--panel); border: 1px solid var(--line); padding: 7px 12px; border-radius: 999px; }
+      .stick-line b { color: var(--text); }
+
+      .tabs { display: flex; gap: 6px; margin-bottom: 10px; overflow-x: auto; scrollbar-width: none; }
+      .tabs button { border-radius: 999px; padding: 9px 16px; font-weight: 700; white-space: nowrap; background: transparent; }
+      .tabs button[aria-selected='true'] { background: #fff; color: #0a0b10; border-color: #fff; }
+      .filters { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+      .filters button { padding: 5px 12px; font-size: 13px; border-radius: 999px; }
+      .filters button[aria-pressed='true'] { background: #23273a; border-color: #4a5275; }
+
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
+      .card {
+        --h: 260;
+        position: relative;
         text-align: left;
-        width: 100%;
-        padding: 14px 16px;
-        border-radius: 12px;
-        border: 2px solid var(--line);
+        padding: 0;
+        border-radius: 16px;
+        border: 2px solid transparent;
         background: var(--panel);
-        display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 2px 12px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        transition: transform 0.12s, border-color 0.12s, box-shadow 0.12s;
       }
-      .song[aria-pressed='true'] { border-color: var(--accent); }
-      .song .t { font-weight: 700; font-size: 16px; }
-      .song .lv { color: var(--warn); font-size: 14px; letter-spacing: 1px; }
-      .song .d { grid-column: 1 / -1; color: var(--dim); font-size: 13px; }
-      .song .info { grid-column: 1 / -1; color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
-      .options {
-        margin: 18px 0;
+      .card:hover { transform: translateY(-3px); border-color: #3a4160; }
+      .card[aria-pressed='true'] { border-color: hsl(var(--h) 90% 65%); box-shadow: 0 0 0 4px hsl(var(--h) 90% 60% / 0.18), 0 14px 40px rgb(0 0 0 / 0.5); }
+      .cover {
+        height: 112px;
+        width: 100%;
+        align-self: stretch;
+        display: grid;
+        place-items: center;
+        font-size: 50px;
+        background:
+          radial-gradient(circle at 30% 20%, hsl(calc(var(--h) + 40) 95% 65% / 0.9), transparent 55%),
+          linear-gradient(135deg, hsl(var(--h) 80% 45%), hsl(calc(var(--h) + 60) 85% 30%));
+        position: relative;
+      }
+      .cover .lv {
+        position: absolute;
+        left: 10px;
+        top: 10px;
+        font-size: 11px;
+        font-weight: 800;
+        padding: 3px 8px;
+        border-radius: 999px;
+        background: rgb(0 0 0 / 0.45);
+        color: #fff;
+        letter-spacing: 0.02em;
+      }
+      .cover .rank { position: absolute; right: 10px; top: 8px; font-size: 22px; font-weight: 900; color: #fff; text-shadow: 0 2px 8px rgb(0 0 0 / 0.6); }
+      .cover .need { position: absolute; right: 10px; bottom: 8px; font-size: 11px; padding: 3px 8px; border-radius: 999px; background: rgb(0 0 0 / 0.5); color: #fff; }
+      .card .body { padding: 10px 12px 12px; display: grid; gap: 2px; }
+      .card .t { font-weight: 800; font-size: 15px; line-height: 1.3; }
+      .card .a { color: var(--dim); font-size: 13px; }
+      .card .d { color: #aab1c3; font-size: 12px; margin-top: 4px; }
+      .card .del { position: absolute; right: 8px; bottom: 8px; color: var(--dim); font-size: 13px; padding: 2px 7px; border-radius: 6px; }
+      .card .del:hover { color: #fff; background: #2a2f42; }
+      .empty { grid-column: 1 / -1; color: var(--dim); text-align: center; padding: 20px; }
+
+      /* 내 노래 */
+      .mytrack { display: grid; gap: 10px; margin-top: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px; }
+      .mytrack[hidden], .mytrack [hidden] { display: none !important; }
+      .mytrack .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .mytrack small { color: var(--dim); font-size: 12px; }
+      .mytrack a { color: var(--accent2); }
+      .mytrack input[type='url'] { flex: 1; min-width: 180px; font: inherit; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: #0d0f16; color: var(--text); }
+      .mytrack .big { width: 100%; padding: 15px; font-size: 16px; font-weight: 800; }
+      .mytrack details { border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 8px; }
+      .mytrack summary { cursor: pointer; color: var(--dim); font-size: 13px; }
+      .mytrack details[open] > :not(summary) { margin-top: 8px; }
+      #track-msg { font-size: 14px; }
+      #track-msg:empty { display: none; }
+      #tap { width: 100%; padding: 22px; font-size: 20px; font-weight: 800; touch-action: manipulation; }
+      #tap.flash { animation: tapflash 0.15s; }
+      @keyframes tapflash { from { background: var(--accent); } }
+
+      /* 아래 시작 막대 */
+      .dock {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 7;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 16px;
+        background: rgb(13 15 22 / 0.92);
+        border-top: 1px solid var(--line);
+        backdrop-filter: blur(10px);
+        flex-wrap: wrap;
+      }
+      .dock[hidden] { display: none; }
+      .dock .sel { flex: 1; min-width: 160px; display: grid; }
+      .dock .sel b { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .dock .sel small { color: var(--dim); font-size: 12px; }
+      .seg { display: flex; gap: 4px; flex-wrap: wrap; }
+      .seg[hidden] { display: none; }
+      .seg button { padding: 7px 11px; font-size: 13px; }
+      .seg button[aria-pressed='true'] { background: linear-gradient(135deg, var(--accent), #5b8cff); border-color: transparent; color: #fff; font-weight: 700; }
+      #start { padding: 13px 28px; font-size: 17px; border-radius: 12px; box-shadow: 0 6px 24px rgb(124 92 255 / 0.45); }
+
+      /* 설정 */
+      .settings {
+        position: absolute;
+        right: 16px;
+        bottom: 76px;
+        z-index: 8;
+        width: min(420px, calc(100% - 32px));
+        background: #141722;
+        border: 1px solid #2c3247;
+        border-radius: 16px;
+        padding: 14px 16px;
+        box-shadow: 0 20px 60px rgb(0 0 0 / 0.6);
         display: grid;
         grid-template-columns: auto 1fr;
-        gap: 10px 14px;
+        gap: 10px 12px;
         align-items: center;
         font-size: 14px;
       }
-      .options .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-      .options input[type='range'] { flex: 1; min-width: 140px; }
-      .options output { font-variant-numeric: tabular-nums; min-width: 64px; }
-      .seg button { padding: 6px 12px; }
-      .seg button[aria-pressed='true'] { background: var(--accent); border-color: var(--accent); color: #fff; }
-      .howto {
-        font-size: 13px;
-        color: var(--dim);
-        background: var(--panel);
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 10px 14px;
-        margin-bottom: 18px;
-      }
-      .howto b { color: var(--text); }
-      .stick {
-        background: var(--panel);
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 10px 14px;
-        margin-bottom: 12px;
-        font-size: 14px;
-      }
-      .stick ol { margin: 0; padding-left: 22px; display: grid; gap: 6px; }
-      .stick li { padding-left: 2px; }
-      .stick li.done { color: var(--dim); }
-      .stick li.done::marker { content: '✓  '; color: var(--ok); font-weight: 700; }
-      .stick li button { padding: 4px 10px; font-size: 13px; margin-left: 4px; }
-      .chips { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 4px; vertical-align: middle; }
-      .chip {
-        --hue: 200;
-        font-size: 12px;
-        padding: 2px 8px;
-        border-radius: 999px;
-        border: 1px solid hsl(var(--hue) 60% 50% / 0.5);
-        color: var(--dim);
-      }
-      .chip.aim { border-color: hsl(var(--hue) 80% 50%); color: var(--text); font-weight: 600; }
-      .chip.ok { background: hsl(var(--hue) 70% 50% / 0.25); color: var(--text); }
-      .chip.ok::before { content: '✓ '; }
-      .stick .aim { margin-top: 8px; font-size: 13px; color: var(--dim); }
-      .stick .hint { margin-top: 8px; }
-      .start { width: 100%; padding: 14px; font-size: 17px; font-weight: 700; }
-      .hint { margin: 12px 0 0; padding: 10px 12px; border-radius: 8px; background: var(--warn-bg); color: var(--warn); font-size: 13px; }
+      .settings[hidden] { display: none; }
+      .settings h3 { grid-column: 1 / -1; margin: 0; font-size: 15px; }
+      .settings input[type='range'] { width: 100%; }
+      .settings output { font-variant-numeric: tabular-nums; color: var(--dim); font-size: 12px; }
+      .settings .help { grid-column: 1 / -1; font-size: 12px; color: var(--dim); margin: -4px 0 0; }
 
-      .result .rank { font-size: 88px; font-weight: 900; line-height: 1; margin: 8px 0; }
-      .result .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 16px 0; }
-      .result .grid div { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; text-align: center; }
-      .result .grid b { display: block; font-size: 22px; font-variant-numeric: tabular-nums; }
-      .result .grid span { font-size: 12px; color: var(--dim); }
-      .result .calib { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; font-size: 14px; margin-bottom: 16px; }
+      .result .inner { max-width: 560px; text-align: center; padding-top: 20px; }
+      .result h2 { margin: 0; font-size: 22px; }
+      .result .rank { font-size: 120px; font-weight: 900; line-height: 1; margin: 6px 0; text-shadow: 0 0 40px currentColor; }
+      .result .lead { color: var(--dim); }
+      .result .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 16px 0; }
+      .result .grid4 div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+      .result .grid4 b { display: block; font-size: 24px; font-variant-numeric: tabular-nums; }
+      .result .grid4 span { font-size: 12px; color: var(--dim); }
+      .result .calib { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; font-size: 14px; margin-bottom: 16px; text-align: left; }
       .result .actions { display: flex; gap: 10px; }
-      .result .actions button { flex: 1; padding: 12px; font-weight: 700; }
+      .result .actions button { flex: 1; padding: 14px; font-weight: 800; }
 
       .count {
         position: absolute;
         inset: 0;
         display: grid;
         place-items: center;
-        font-size: 120px;
+        font-size: 140px;
         font-weight: 900;
         pointer-events: none;
-        color: var(--accent);
+        color: #fff;
+        text-shadow: 0 0 50px var(--accent);
+        z-index: 5;
       }
-      /* 내 노래 */
-      .song { position: relative; }
-      .song .del { position: absolute; right: 10px; bottom: 8px; color: var(--dim); padding: 2px 6px; border-radius: 6px; }
-      .song .del:hover { color: var(--text); background: var(--line); }
-      .mytrack {
-        background: var(--panel);
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 12px 14px;
-        margin-top: 12px;
-        font-size: 14px;
-        display: grid;
-        gap: 8px;
-      }
-      .mytrack h3 { margin: 0; font-size: 15px; }
-      .mytrack .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-      .mytrack input[type='url'] { flex: 1; min-width: 180px; font: inherit; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
-      .mytrack input[type='file'] { max-width: 100%; font-size: 13px; }
-      .mytrack small { color: var(--dim); font-size: 12px; }
-      .mytrack a { color: var(--accent); }
-      .mytrack [hidden] { display: none; }
-      #track-msg { color: var(--text); font-size: 13px; min-height: 1.2em; }
-      #track-msg:empty { display: none; }
-      .mytrack .big { width: 100%; padding: 14px; font-size: 16px; font-weight: 700; }
-      .mytrack details { border-top: 1px solid var(--line); padding-top: 8px; display: grid; gap: 8px; }
-      .mytrack details[open] > :not(summary) { margin-top: 8px; }
-      .mytrack summary { cursor: pointer; color: var(--dim); font-size: 13px; }
-      #tap { width: 100%; padding: 22px; font-size: 20px; font-weight: 800; touch-action: manipulation; }
-      #tap.flash { animation: tapflash 0.15s; }
-      @keyframes tapflash { from { background: var(--accent); color: #fff; } }
-      /* 유튜브 영상: 오른쪽 아래 작은 창 (가리지 않게 클릭은 통과) */
       #yt-box {
         position: absolute;
         right: 12px;
-        bottom: 12px;
+        bottom: 84px;
         width: 256px;
         aspect-ratio: 16 / 9;
-        z-index: 3;
-        border-radius: 8px;
+        z-index: 9;
+        border-radius: 10px;
         overflow: hidden;
-        box-shadow: 0 4px 16px rgb(0 0 0 / 0.4);
+        box-shadow: 0 6px 20px rgb(0 0 0 / 0.5);
         background: #000;
       }
       #yt-box iframe { width: 100%; height: 100%; border: 0; pointer-events: none; display: block; }
-      @media (max-width: 480px) {
-        #yt-box { width: 160px; right: 8px; bottom: 8px; }
-      }
-      @media (max-width: 480px) {
-        .result .grid { grid-template-columns: repeat(2, 1fr); }
+      body.playing #yt-box { bottom: 12px; }
+      @media (max-width: 560px) {
+        .grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+        .cover { height: 84px; font-size: 38px; }
+        .result .grid4 { grid-template-columns: repeat(2, 1fr); }
         .hud .score { font-size: 22px; }
+        #yt-box { width: 160px; }
+        .dock { padding: 10px 12px; }
+        #start { padding: 12px 20px; }
       }
     </style>
-    <script type="module" crossorigin src="./assets/rhythm-DGMubzAg.js"></script>
-    <link rel="modulepreload" crossorigin href="./assets/ble-C_Dz__IT.js">
+    <script type="module" crossorigin src="./assets/rhythm-Oi_g6nVO.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/header-Dh3K5oAK.js">
     <link rel="modulepreload" crossorigin href="./assets/audio-Cmd_TyyR.js">
-    <link rel="modulepreload" crossorigin href="./assets/motion-D0put4hd.js">
-    <link rel="modulepreload" crossorigin href="./assets/scene-B_8wvg-9.js">
-    <link rel="modulepreload" crossorigin href="./assets/calib-DFslUjxI.js">
+    <link rel="modulepreload" crossorigin href="./assets/view-BQ00PvTK.js">
+    <link rel="stylesheet" crossorigin href="./assets/header-BZ_7v_dm.css">
   </head>
   <body>
-    <header>
-      <h1>🥁 Air Band 리듬 게임</h1>
-      <button id="connect" class="primary">센서 연결</button>
-      <button id="phone" title="보드 없이 이 폰을 스틱처럼 쥐고 휘두르기 (폰에서만)">📱 폰으로 치기</button>
-      <span class="meta">상태 <b id="status" data-state="disconnected">연결 안 됨</b></span>
-      <span class="spacer"></span>
-      <a class="btn" href="kit.html">드럼 키트</a>
-      <a class="btn" href="tinyml.html">TinyML</a>
-      <a class="btn" href="conduct.html">🎼 지휘</a>
-      <a class="btn" href="./">자유 연주로</a>
-    </header>
     <main id="stage">
       <canvas id="game"></canvas>
       <canvas id="kit"></canvas>
@@ -283,74 +277,77 @@
       <div class="count" id="count" hidden></div>
       <div id="yt-box" hidden><div id="yt-player"></div></div>
 
-      <!-- 곡 선택 -->
+      <!-- 곡 고르기 -->
       <section class="overlay" id="menu">
         <div class="inner">
-          <h2>곡 선택</h2>
-          <p class="lead">드럼으로 좁혀 들어오는 링이 드럼 테두리에 닿는 순간, 그 드럼 쪽으로 스틱을 휘둘러 치세요.</p>
-          <!-- 스틱 준비 (main.ts renderStick) -->
-          <div class="stick">
-            <ol>
-              <li id="step-connect">위의 <b>센서 연결</b> → AirBand-R <small>(보드가 없으면 <b>📱 폰으로 치기</b>: 폰 윗변을 앞으로 쥐고 휘두르기)</small></li>
-              <li id="step-axis">처음 한 번: 스틱 끝을 천장으로 세우고 가만히 든 채 <button id="axis" disabled>축 맞추기 (A)</button> <span id="axis-msg"></span></li>
-              <li id="step-center">스틱을 스네어 칠 자리에 두고 <button id="recenter" disabled>정면 맞추기 (C)</button> <span id="center-msg"></span></li>
-              <li id="step-try">방향마다 한 번씩 쳐 보기 <span class="chips" id="chips"></span></li>
-            </ol>
-            <div class="aim" id="aim-now"></div>
-            <p class="hint" id="connect-hint" hidden></p>
+          <div class="menu-head">
+            <div>
+              <h2>곡 고르기</h2>
+              <p>드럼으로 좁혀 오는 링이 테두리에 닿는 순간, 그 드럼 쪽으로 휘둘러 치세요</p>
+            </div>
+            <div class="stick-line" id="stick-line"></div>
           </div>
-          <div class="howto">
-            <b>스틱 방향</b> · 왼쪽 하이햇 · 정면 스네어 · 오른쪽 탐 · 위로 크래시 · 킥은 보드 버튼 2 &nbsp;|&nbsp; 화면의 드럼을 눌러도 칩니다<br />
-            <b>키보드</b> · <b>D F J K</b> = 하이햇 · 스네어 · 탐 · 크래시, <b>스페이스</b> = 킥 &nbsp;|&nbsp; <b>Esc</b> 그만두기 · <b>Enter</b> 시작
+          <div class="tabs" role="tablist" id="tabs">
+            <button role="tab" data-tab="practice" aria-selected="true">🎯 연습곡</button>
+            <button role="tab" data-tab="pop" aria-selected="false">⭐ 인기곡 (내 MP3)</button>
+            <button role="tab" data-tab="mine" aria-selected="false">🎵 내 노래</button>
           </div>
-          <div class="songs" id="songs"></div>
+          <div class="filters" id="filters"></div>
+          <div class="grid" id="songs"></div>
+
           <!-- 내 노래 (main.ts setupTracks) -->
-          <div class="mytrack">
-            <h3>🎵 내 노래로 치기</h3>
-            <small>① 노래 파일 고르기 → ② 시작. 노래를 듣고 킥 · 스네어 · 하이햇 자리를 찾아 악보를 자동으로 만듭니다. 파일은 이 브라우저 안에서만 쓰고 어디에도 올리지 않습니다.</small>
+          <div class="mytrack" id="mytrack" hidden>
             <button id="file-btn" class="primary big">🎵 노래 파일 고르기 (MP3 · M4A · WAV)</button>
-            <input type="file" id="file" accept="audio/*" hidden />
-            <div id="track-msg"></div>
+            <small>노래를 듣고 킥 · 스네어 · 하이햇 자리를 찾아 악보를 자동으로 만듭니다. 파일은 이 브라우저 안에서만 쓰고 어디에도 올리지 않습니다.</small>
             <div id="bpm-fix" class="row" hidden>
               <small>노트가 노래보다 두 배 빠르거나 느리면</small>
               <button id="bpm-half">BPM ÷2</button>
               <button id="bpm-double">BPM ×2</button>
             </div>
-            <div class="row"><span>난이도</span><div class="row seg" id="opt-level"></div></div>
-            <button id="track-start" class="primary big" hidden>▶ 이 노래로 시작</button>
             <details id="yt-more">
               <summary>파일이 없으면: 유튜브 링크로 (박자를 직접 탭해야 해서 조금 번거로움)</summary>
               <div class="row">
                 <input type="url" id="yt-url" placeholder="유튜브 링크 붙여넣기" />
                 <button id="yt-load">불러오기</button>
               </div>
-              <small>예: <a href="#" id="yt-example">Red Hot Chili Peppers — Dani California</a> · 유튜브 소리는 분석할 수 없어서, 노트는 박자에 맞춘 기본 패턴입니다. 처음 한 번 "박자 맞추기"에서 드럼이 시작되면 박마다 스페이스를 16번쯤 치고 Enter.</small>
+              <small>예: <a href="#" id="yt-example">Red Hot Chili Peppers — Dani California</a> · 유튜브 소리는 분석할 수 없어서 노트는 박자에 맞춘 기본 패턴입니다. "박자 맞추기"에서 드럼이 시작되면 박마다 스페이스를 16번쯤 치고 Enter.</small>
               <div id="track-sync" class="row" hidden>
                 <button id="tap-start">▶ 박자 맞추기</button>
-                <button id="tap-refine" hidden title="곡 중간에서 한 번 더 탭하면 앞의 탭과 합쳐 BPM이 더 정확해집니다">▶ 중간에서 한 번 더 (더 정확)</button>
+                <button id="tap-refine" hidden>▶ 중간에서 한 번 더 (더 정확)</button>
                 <button id="tap-done" class="primary" hidden>완료 (Enter)</button>
               </div>
               <button id="tap" hidden>탭 — 박마다</button>
             </details>
           </div>
-          <div class="options">
-            <span>화면</span>
-            <div class="row seg" id="opt-view"></div>
-            <span>가이드 소리</span>
-            <div class="row seg" id="opt-guide"></div>
-            <span>메트로놈</span>
-            <div class="row seg" id="opt-metro"></div>
-            <span>음표 속도</span>
-            <div class="row seg" id="opt-speed"></div>
-            <span>입력 보정</span>
-            <div class="row">
-              <input type="range" id="opt-offset" min="-150" max="150" step="5" />
-              <output id="opt-offset-out"></output>
-            </div>
-          </div>
-          <button class="primary start" id="start">시작</button>
+          <div id="track-msg" style="margin-top: 12px"></div>
+          <input type="file" id="file" accept="audio/*" hidden />
         </div>
       </section>
+
+      <!-- 아래 시작 막대 -->
+      <div class="dock" id="dock">
+        <div class="sel"><b id="sel-title"></b><small id="sel-info"></small></div>
+        <div class="seg" id="opt-level" title="난이도"></div>
+        <button id="settings-btn" title="설정">⚙ 설정</button>
+        <button class="primary" id="start">▶ 시작</button>
+      </div>
+      <div class="settings" id="settings" hidden>
+        <h3>⚙ 설정</h3>
+        <span>킥(큰북)</span>
+        <div class="seg" id="opt-autokick"></div>
+        <p class="help">자동: 킥은 게임이 대신 쳐 줘서 스틱만 신경 쓰면 됩니다 (스틱 하나일 때 추천)</p>
+        <span>화면</span>
+        <div class="seg" id="opt-view"></div>
+        <span>가이드 소리</span>
+        <div class="seg" id="opt-guide"></div>
+        <span>메트로놈</span>
+        <div class="seg" id="opt-metro"></div>
+        <span>노트 속도</span>
+        <div class="seg" id="opt-speed"></div>
+        <span>타이밍 보정</span>
+        <div><input type="range" id="opt-offset" min="-150" max="150" step="5" /> <output id="opt-offset-out"></output></div>
+        <p class="help">늘 늦게 쳐도 맞게 하려면 +, 빨리 쳐도 맞게 하려면 − · 게임이 끝나면 추천값을 알려 줍니다</p>
+      </div>
 
       <!-- 결과 -->
       <section class="overlay result" id="result" hidden>
@@ -358,7 +355,7 @@
           <h2 id="res-title"></h2>
           <div class="rank" id="res-rank"></div>
           <p class="lead"><span id="res-score"></span>점 · 정확도 <span id="res-acc"></span> · 최대 콤보 <span id="res-combo"></span></p>
-          <div class="grid">
+          <div class="grid4">
             <div><b id="res-perfect"></b><span>Perfect</span></div>
             <div><b id="res-great"></b><span>Great</span></div>
             <div><b id="res-good"></b><span>Good</span></div>
@@ -366,8 +363,8 @@
           </div>
           <div class="calib" id="res-calib"></div>
           <div class="actions">
-            <button id="res-retry" class="primary">다시 하기</button>
-            <button id="res-menu">곡 선택</button>
+            <button id="res-retry" class="primary">↺ 다시 하기</button>
+            <button id="res-menu">곡 고르기</button>
           </div>
         </div>
       </section>

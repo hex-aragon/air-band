@@ -118,24 +118,12 @@
         #score { height: 112px; }
       }
     </style>
-    <script type="module" crossorigin src="./assets/conduct-D_jGZC6f.js"></script>
-    <link rel="modulepreload" crossorigin href="./assets/ble-C_Dz__IT.js">
-    <link rel="modulepreload" crossorigin href="./assets/calib-DFslUjxI.js">
+    <script type="module" crossorigin src="./assets/conduct-DHo10iwk.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/header-Dh3K5oAK.js">
+    <link rel="stylesheet" crossorigin href="./assets/header-BZ_7v_dm.css">
   </head>
   <body>
-    <header>
-      <h1>🎼 Air Band 지휘</h1>
-      <button id="connect" class="primary">센서 연결</button>
-      <button id="phone" title="보드 없이 이 폰을 지휘봉처럼 쥐기 (폰에서만)">📱 폰으로 지휘</button>
-      <button id="axis" disabled title="키보드 A — 처음 한 번: 지휘봉 끝을 천장으로 세우고 가만히 든 채 누르기">① 축 맞추기</button>
-      <button id="recenter" disabled title="키보드 C — 지휘봉을 정면(오케스트라 가운데)으로 겨누고 누르기">② 정면 맞추기</button>
-      <button id="restart" title="키보드 R">처음부터</button>
-      <span class="meta">상태 <b id="status" data-state="disconnected">연결 안 됨</b></span>
-      <span class="spacer"></span>
-      <a class="btn hide-sm" href="./">자유 연주</a>
-      <a class="btn hide-sm" href="kit.html">드럼 키트</a>
-      <a class="btn hide-sm" href="rhythm.html">리듬 게임</a>
-    </header>
+    <div hidden><button id="axis"></button><button id="recenter"></button></div>
     <div id="support" hidden></div>
     <main id="stage">
      <div class="hallwrap">
@@ -161,6 +149,7 @@
       <div class="song">
         <select id="song" aria-label="곡 선택"></select>
         <b id="title"></b><small id="composer"></small>
+        <button id="restart" title="키보드 R">↺ 처음부터</button>
       </div>
       <div id="message">불러오는 중…</div>
       <div class="progress"><span id="progress"></span></div>
