@@ -9,6 +9,8 @@
 //
 // [설명] UUID는 BLE 서비스/특성의 고유 이름표다. 아래 세 개는 Nordic UART Service 표준값이라
 //   펌웨어의 BLEUart와 자동으로 맞는다. TX/RX는 "보드 입장"에서 붙인 이름이다.
+import { PhoneStick } from './phone';
+
 export const NUS_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 export const NUS_TX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // 보드 → 브라우저 (notify)
 export const NUS_RX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // 브라우저 → 보드 (write, 한 글자 명령)
@@ -17,9 +19,17 @@ export const DEVICE_NAME = 'AirBand-R';
 export const PACKET_SIZE = 8;
 /** 0번 바이트가 이 값이면 모션 패킷 (타격 패킷의 0번 바이트 hand는 0/1) — 펌웨어 PKT_MOTION과 같음 */
 export const PKT_MOTION = 0x80;
+/** 축 맞추기 결과 패킷 — 펌웨어 PKT_AXIS. [1] 1=성공 [2..7] 축 x,y,z ×10000 (int16) */
+export const PKT_AXIS = 0x81;
 
 /** 보드에 보내는 한 글자 명령 (펌웨어 handleCommand와 같음) */
-export const CMD = { recenter: 'c', motionOn: 'm', motionOff: 'x' } as const;
+export const CMD = { recenter: 'c', axis: 'a', motionOn: 'm', motionOff: 'x', conduct: 'k', drum: 'd' } as const;
+
+/** 축 맞추기 결과 */
+export interface AxisResult {
+  ok: boolean;
+  axis: [number, number, number];
+}
 
 /** 타격 이벤트 (패킷 8바이트 + 수신 시각) */
 export interface HitEvent {
@@ -55,7 +65,7 @@ export type BatteryInfo = number | 'none';
 export function parsePackets(dv: DataView, receivedAt: number): HitEvent[] {
   const out: HitEvent[] = [];
   for (let off = 0; off + PACKET_SIZE <= dv.byteLength; off += PACKET_SIZE) {
-    if (dv.getUint8(off) === PKT_MOTION) continue; // 모션 패킷은 parseMotions()가 처리
+    if (dv.getUint8(off) >= PKT_MOTION) continue; // 0x80 이상은 타격이 아님 (모션 · 축 결과)
     out.push({
       hand: dv.getUint8(off + 0),
       mode: dv.getUint8(off + 1),
@@ -97,8 +107,8 @@ export function webBluetoothSupport(): { ok: boolean; reason?: string } {
     return {
       ok: false,
       reason: ios
-        ? 'iOS Safari/Chrome은 Web Bluetooth를 지원하지 않습니다. Android Chrome 또는 PC의 Chrome/Edge를 사용하세요. (iOS는 Bluefy 같은 앱 브라우저로 시도 가능)'
-        : '이 브라우저는 Web Bluetooth를 지원하지 않습니다. Chrome 또는 Edge를 사용하세요.',
+        ? 'iOS Safari/Chrome은 Web Bluetooth를 지원하지 않아 보드는 연결할 수 없습니다. 📱 폰으로 치기는 됩니다. (보드는 Android Chrome · PC Chrome/Edge 또는 Bluefy 앱 브라우저)'
+        : '이 브라우저는 Web Bluetooth를 지원하지 않습니다. Chrome 또는 Edge를 사용하세요. (폰이면 📱 폰으로 치기는 됩니다)',
     };
   }
   return { ok: true };
@@ -107,12 +117,17 @@ export function webBluetoothSupport(): { ok: boolean; reason?: string } {
 export class AirBandConnection {
   onHit: (e: HitEvent) => void = () => {};
   onMotion: (m: MotionEvent) => void = () => {};
+  onAxis: (r: AxisResult) => void = () => {};
   onState: (s: ConnState, detail?: string) => void = () => {};
   onBattery: (b: BatteryInfo) => void = () => {};
 
   private device: BluetoothDevice | null = null;
+  /** 사용자가 끊은 게 아니면 true → 연결이 끊기면 자동으로 다시 붙는다 */
+  private wantConnected = false;
   private tx: BluetoothRemoteGATTCharacteristic | null = null;
   private rx: BluetoothRemoteGATTCharacteristic | null = null;
+  /** 폰 단독 모드일 때만 있음 (보드 대신 폰 센서) */
+  private phone: PhoneStick | null = null;
   /** GATT 쓰기는 한 번에 하나만 가능해서 줄 세워 보낸다 */
   private writeChain: Promise<void> = Promise.resolve();
 
@@ -132,30 +147,97 @@ export class AirBandConnection {
         optionalServices: [NUS_SERVICE, 'battery_service'],
       });
       this.device = device;
+      this.wantConnected = true;
       device.addEventListener('gattserverdisconnected', this.handleDisconnect);
-
-      const server = await device.gatt!.connect();
-      const service = await server.getPrimaryService(NUS_SERVICE);
-      this.tx = await service.getCharacteristic(NUS_TX);
-      this.rx = await service.getCharacteristic(NUS_RX);
-      this.tx.addEventListener('characteristicvaluechanged', this.handleNotify);
-      await this.tx.startNotifications();
-
-      this.onState('connected', device.name ?? DEVICE_NAME);
-      void this.readBattery(server);
+      // 첫 연결이 "GATT 실패"로 가끔 튕긴다(특히 Windows) → 몇 번 다시 시도
+      await this.withRetry(() => this.attach(device), 3);
     } catch (err) {
+      this.wantConnected = false;
       this.cleanup();
-      this.onState('disconnected', err instanceof Error ? err.message : String(err));
+      this.onState('disconnected', friendlyError(err));
       throw err;
     }
   }
 
+  /** 이미 고른 기기에 GATT 연결 → NUS 특성 찾기 → notify 구독 */
+  private async attach(device: BluetoothDevice): Promise<void> {
+    const server = await device.gatt!.connect();
+    const service = await server.getPrimaryService(NUS_SERVICE);
+    this.tx = await service.getCharacteristic(NUS_TX);
+    this.rx = await service.getCharacteristic(NUS_RX);
+    this.tx.addEventListener('characteristicvaluechanged', this.handleNotify);
+    await this.tx.startNotifications();
+    this.onState('connected', device.name ?? DEVICE_NAME);
+    void this.readBattery(server);
+  }
+
+  private async withRetry(fn: () => Promise<void>, tries: number): Promise<void> {
+    for (let i = 1; ; i++) {
+      try {
+        return await fn();
+      } catch (err) {
+        if (i >= tries || !this.wantConnected) throw err;
+        this.device?.gatt?.disconnect();
+        this.onState('connecting', `다시 시도 ${i}/${tries - 1}`);
+        await new Promise((res) => setTimeout(res, 400 * i));
+      }
+    }
+  }
+
+  /** 폰 단독 모드인지 */
+  get isPhone(): boolean {
+    return this.phone !== null;
+  }
+
+  /**
+   * 폰 단독 모드: 보드 대신 이 폰의 센서로 타격 · 방향을 만든다. 이벤트는 보드와 똑같이 onHit · onMotion으로 온다.
+   * iOS 권한 요청 때문에 반드시 버튼 클릭 핸들러 안에서, 다른 await보다 먼저 부를 것.
+   */
+  async connectPhone(): Promise<void> {
+    if (this.phone) return;
+    if (this.device) this.disconnect();
+    const p = new PhoneStick();
+    p.onHit = (e) => this.onHit(e);
+    p.onMotion = (m) => this.onMotion(m);
+    p.onAxis = (r) => this.onAxis(r);
+    p.onFail = (reason) => {
+      if (this.phone !== p) return;
+      this.stopPhone();
+      this.onState('disconnected', reason);
+    };
+    this.phone = p;
+    this.onState('connecting');
+    try {
+      await p.start();
+    } catch (err) {
+      this.stopPhone();
+      this.onState('disconnected', err instanceof Error ? err.message : String(err));
+      throw err;
+    }
+    if (this.phone === p) this.onState('connected', '📱 폰 센서');
+  }
+
+  private stopPhone(): void {
+    this.phone?.stop();
+    this.phone = null;
+  }
+
   disconnect(): void {
+    if (this.phone) {
+      this.stopPhone();
+      this.onState('disconnected');
+      return;
+    }
+    this.wantConnected = false;
     this.device?.gatt?.disconnect();
   }
 
   /** 보드에 한 글자 명령 보내기 (CMD 참고). 연결 전이면 아무것도 하지 않는다 */
   send(cmd: string): Promise<void> {
+    if (this.phone) {
+      this.phone.command(cmd);
+      return Promise.resolve();
+    }
     const rx = this.rx;
     if (!rx) return Promise.resolve();
     const data = new TextEncoder().encode(cmd);
@@ -188,11 +270,40 @@ export class AirBandConnection {
     if (!ch.value) return;
     for (const hit of parsePackets(ch.value, receivedAt)) this.onHit(hit);
     for (const m of parseMotions(ch.value, receivedAt)) this.onMotion(m);
+    const dv = ch.value;
+    for (let off = 0; off + PACKET_SIZE <= dv.byteLength; off += PACKET_SIZE) {
+      if (dv.getUint8(off) !== PKT_AXIS) continue;
+      const v = (k: number) => dv.getInt16(off + 2 + k * 2, true) / 10000;
+      this.onAxis({ ok: dv.getUint8(off + 1) === 1, axis: [v(0), v(1), v(2)] });
+    }
   };
 
-  private handleDisconnect = (): void => {
+  // 끊김: 사용자가 끊은 게 아니면 같은 기기에 다시 붙는다 (선택 창 없이). 0.5초 · 1초 · 2초 · 3초 · 5초 간격으로 5번
+  private handleDisconnect = async (): Promise<void> => {
+    const device = this.device;
+    this.tx?.removeEventListener('characteristicvaluechanged', this.handleNotify);
+    this.tx = null;
+    this.rx = null;
+    if (!this.wantConnected || !device) {
+      this.cleanup();
+      this.onState('disconnected', this.wantConnected ? '연결이 끊어졌습니다' : undefined);
+      return;
+    }
+    const waits = [500, 1000, 2000, 3000, 5000];
+    for (let i = 0; i < waits.length && this.wantConnected; i++) {
+      this.onState('connecting', `연결이 끊겨 다시 붙는 중 ${i + 1}/${waits.length}`);
+      await new Promise((res) => setTimeout(res, waits[i]));
+      if (!this.wantConnected) break;
+      try {
+        await this.attach(device);
+        return;
+      } catch {
+        // 다음 시도
+      }
+    }
+    this.wantConnected = false;
     this.cleanup();
-    this.onState('disconnected', '연결이 끊어졌습니다');
+    this.onState('disconnected', '연결이 끊어졌습니다 — 보드 전원 · 거리를 확인하고 다시 연결하세요');
   };
 
   private cleanup(): void {
@@ -202,4 +313,12 @@ export class AirBandConnection {
     this.rx = null;
     this.device = null;
   }
+}
+
+/** 브라우저 오류 문구를 이해하기 쉽게 */
+function friendlyError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/cancel/i.test(msg)) return '기기 선택을 취소했습니다';
+  if (/GATT|connect/i.test(msg)) return `연결 실패 — 보드를 껐다 켜고 다시 눌러 보세요 (${msg})`;
+  return msg;
 }

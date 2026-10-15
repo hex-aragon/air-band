@@ -29,11 +29,17 @@
 //   getOutputTimestamp()는 "지금 스피커로 나가는 소리의 오디오 시각 ↔ performance 시각" 쌍을 알려 준다.
 //   이걸로 변환하면 가이드 소리가 스피커에서 실제로 들리는 순간을 노트가 판정선에 닿는 순간에 맞출 수 있다.
 
-import { AirBandConnection, CMD, webBluetoothSupport } from '../ble';
+import { mountHeader, attachStick, calibrate, stickConnected } from '../ui/header';
+mountHeader('rhythm');
+
+import { AirBandConnection, CMD } from '../ble';
 import { DrumAudio } from '../audio';
 import { RhythmGame, WINDOW_MS, POINTS, type Judgement } from './game';
-import { SONGS, buildChart, type Chart, type Song } from './charts';
-import { KitScene, zoneOfAim } from '../kit/scene';
+import { SONGS, POP_SONGS, buildChart, type Chart, type Song, type PopSong } from './charts';
+import { zoneOfAim } from '../kit/scene';
+import { createKitView } from '../kit/view';
+import { fitTaps, fitKnownTaps, templateChart, LEVEL_NAMES, type BeatGrid, type Level } from './music';
+import { YouTubeTrack, YT_STATE, parseVideoId } from './youtube';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -69,6 +75,20 @@ const JUDGE_STYLE: Record<Judgement, { text: string; hue: number }> = {
   miss: { text: 'MISS', hue: 0 },
 };
 
+/** 화면 맨 위 큰 판정 글자. 칠 때마다 애니메이션을 처음부터 다시 */
+function showJudge(j: Judgement, delta: number): void {
+  const el = $('judge-big');
+  const st = JUDGE_STYLE[j];
+  const combo = game?.combo ?? 0;
+  $('jb-text').textContent = j === 'perfect' ? 'PERFECT!' : j === 'miss' ? 'MISS' : st.text;
+  const d = Math.round(delta);
+  $('jb-sub').textContent = j === 'miss' || Math.abs(d) <= WINDOW_MS.perfect ? '' : d < 0 ? `빠름 ${-d}ms` : `늦음 ${d}ms`;
+  $('jb-combo').innerHTML = combo >= 2 ? `${combo}<small>COMBO</small>` : '';
+  el.className = '';
+  void el.offsetWidth; // 애니메이션 다시 시작
+  el.className = `go ${j}${combo > 0 && combo % 10 === 0 ? ' milestone' : ''}`;
+}
+
 // ---------------------------------------------------------------------------
 // 설정 · 최고 기록 (브라우저에 저장. 저장이 막혀 있어도 게임은 동작)
 // ---------------------------------------------------------------------------
@@ -78,8 +98,10 @@ interface Settings {
   speed: number;
   offsetMs: number; // 입력 보정: 양수면 "늦게 쳐도 맞게" 판정
   view: 'kit' | 'lanes';
+  level: Level; // 내 노래 악보 난이도
+  autoKick: boolean; // 킥은 게임이 대신 친다 (스틱 하나일 때)
 }
-const DEFAULT_SETTINGS: Settings = { guide: true, metronome: true, speed: 1, offsetMs: 0, view: 'kit' };
+const DEFAULT_SETTINGS: Settings = { guide: true, metronome: true, speed: 1, offsetMs: 0, view: 'kit', level: 2, autoKick: true };
 type Best = Record<string, { score: number; rank: string }>;
 
 function load<T>(key: string, fallback: T): T {
@@ -102,18 +124,54 @@ const settings: Settings = load('airband.rhythm.settings', DEFAULT_SETTINGS);
 const best: Best = load('airband.rhythm.best', {});
 
 // ---------------------------------------------------------------------------
+// 유튜브 노래 (인기곡 · 링크로 추가한 곡)
+// ---------------------------------------------------------------------------
+// [설명] 내장 곡은 악보 문자열(charts.ts)로, 노래는 유튜브 영상 + 박자 격자에서 악보를 만든다(music.ts templateChart).
+//   유튜브 소리는 읽을 수 없어서, 노래를 틀면 사용자가 박자를 8번 탭 → 박자 격자 → 그대로 게임 시작.
+//   인기곡은 공식 뮤직비디오 · 대략 BPM · "짝마다 탭" 안내가 정해져 있다(charts.ts POP_SONGS). 박자는 브라우저에 저장.
+interface Track {
+  id: string; // 'yt:영상id'
+  title: string;
+  videoId: string;
+  grid?: BeatGrid; // 탭으로 맞춘 박자
+  taps?: number[];
+  mediaMs: number; // 노래 길이 (모르면 0)
+  pop?: PopSong; // 인기곡이면
+}
+type SavedTrack = Omit<Track, 'pop'> & { popId?: string };
+/** 곡 고르기에서 고른 것: 연습곡 · 내 노래(파일 · 유튜브) · 아직 파일을 안 고른 인기곡 */
+type Pick_ = { kind: 'song'; song: Song } | { kind: 'track'; track: Track } | { kind: 'pop'; pop: PopSong };
+type Tab = 'practice' | 'pop' | 'mine';
+let tab: Tab = 'pop';
+let levelFilter: 0 | Level = 0;
+
+
+const tracks: Track[] = load<{ list: SavedTrack[] }>('airband.rhythm.tracks', { list: [] }).list.map(({ popId, ...t }) => ({
+  ...t,
+  pop: POP_SONGS.find((p) => p.id === popId || p.videoId === t.videoId),
+}));
+function saveTracks(): void {
+  const list: SavedTrack[] = tracks.map(({ id, title, videoId, grid, taps, mediaMs, pop }) => ({ id, title, videoId, grid, taps, mediaMs, popId: pop?.id }));
+  save('airband.rhythm.tracks', { list });
+}
+const bestKey = (p: Pick_) => (p.kind === 'song' ? p.song.id : p.kind === 'pop' ? `pop:${p.pop.id}:${settings.level}` : p.track.pop ? `pop:${p.track.pop.id}:${settings.level}` : `${p.track.id}:${settings.level}`);
+const titleOf = (p: Pick_) => (p.kind === 'song' ? p.song.title : p.kind === 'pop' ? `${p.pop.title} — ${p.pop.artist}` : p.track.title);
+
+// ---------------------------------------------------------------------------
 // 상태
 // ---------------------------------------------------------------------------
 type State = 'menu' | 'play' | 'result';
 let state: State = 'menu';
 let song: Song = SONGS[0];
+/** 곡 선택에서 고른 것 (내장 곡 또는 내 노래) */
+let pick: Pick_ = { kind: 'song', song: SONGS[0] };
 let chart: Chart | null = null;
 let game: RhythmGame | null = null;
 let songStart = 0; // 곡의 0ms가 되는 performance.now() 값
 
 interface AudioEvent {
   time: number; // 게임 시각 ms
-  kind: 'click' | 'guide';
+  kind: 'click' | 'guide' | 'auto'; // auto = 킥 자동 (소리 + 화면 킥 흔들림)
   lane: number;
   accent: boolean;
 }
@@ -132,18 +190,28 @@ const hints: DirHint[] = [];
 let aimCls = -1; // 지금 스틱이 겨눈 드럼 (보드가 판정한 구역)
 let aimAt = -Infinity;
 let minOffset = Infinity; // BLE 지터 제거용 (수신 시각 - 보드 시각)의 최솟값
-const sensorHit = new Set<number>(); // 스틱 준비: 센서로 쳐 본 드럼
-let recentered = false;
 
 const audio = new DrumAudio();
 const conn = new AirBandConnection();
 const canvas = $<HTMLCanvasElement>('game');
 const ctx2d = canvas.getContext('2d')!;
 const kitCanvas = $<HTMLCanvasElement>('kit');
-const scene = new KitScene(kitCanvas, hueOf, (cls) => DRUM_NAMES[cls]);
+const scene = createKitView(kitCanvas, hueOf, (cls) => DRUM_NAMES[cls]);
 scene.showNames = false;
 scene.overlay = drawKitOverlay;
 let clickBuffers: { normal: AudioBuffer; accent: AudioBuffer } | null = null;
+
+// 내 노래 재생
+const yt = new YouTubeTrack($('yt-player'));
+let media: 'none' | 'youtube' = 'none'; // 지금 게임 · 탭 맞추기에서 쓰는 노래 시계
+let mediaLastT = 0; // 유튜브가 멈췄을 때(버퍼링) 시계를 이 위치에 붙잡아 둔다
+let mediaLastRead = -1;
+/** 탭으로 박자 맞추는 중이면 그 곡 */
+let tapping: Track | null = null;
+/** 유튜브 곡: 치는 박자를 따라 남은 노트를 조금씩 옮긴다 (탭으로 맞춘 BPM이 조금 틀려도 곡 끝까지 맞게) */
+let driftEma = 0;
+let driftTotal = 0;
+let taps: number[] = [];
 
 // ---------------------------------------------------------------------------
 // 소리: 메트로놈 클릭 · 가이드 · 시각 변환
@@ -183,21 +251,81 @@ function scheduleAudio(t: number): void {
     const ev = events[nextEvent++];
     const when = Math.max(audio.ctx.currentTime, perfToAudioTime(songStart + ev.time));
     if (ev.kind === 'click') playClickAt(ev.accent, when);
-    else audio.playAt(ev.lane, GUIDE_VELOCITY, when);
+    else if (ev.kind === 'auto') {
+      audio.playAt(ev.lane, INPUT_VELOCITY, when);
+      const at = songStart + ev.time;
+      setTimeout(() => scene.hit(ev.lane, 90), Math.max(0, at - performance.now()));
+    } else audio.playAt(ev.lane, GUIDE_VELOCITY, when);
   }
 }
 
 // ---------------------------------------------------------------------------
 // 게임 진행
 // ---------------------------------------------------------------------------
+/** 고른 곡의 악보. 유튜브 곡인데 아직 박자를 안 맞췄으면 null */
+function chartOf(p: Pick_): Chart | null {
+  if (p.kind === 'pop') return null;
+  if (p.kind === 'song') return buildChart(p.song);
+  const t = p.track;
+  if (t.grid) return templateChart(t.grid, settings.level, t.mediaMs || t.grid.firstBeatMs + 180000);
+  return null;
+}
+
 function startSong(): void {
   void audio.resume();
-  chart = buildChart(song);
-  game = new RhythmGame(chart.notes);
-  popups.length = 0;
+  stopTapping();
+  if (pick.kind === 'pop') {
+    selectPick({ kind: 'track', track: popTrack(pick.pop) });
+  }
+  if (pick.kind === 'track' && !pick.track.grid) {
+    // 처음 치는 노래: 영상을 틀고 박자를 몇 번 탭 → 그대로 게임 시작
+    void startTapping(pick.track);
+    return;
+  }
+  startGame();
+}
 
-  // 소리 이벤트 목록: 카운트인(항상) + 메트로놈 + 가이드
+/** 게임 시작. continueMs가 있으면 유튜브를 멈추지 않고 그 시각부터 (인기곡 탭 직후) */
+function startGame(continueMs?: number): void {
+  let c = chartOf(pick);
+  if (!c || pick.kind === 'pop') {
+    $('track-msg').textContent = '먼저 "박자 맞추기"로 이 노래의 박자를 알려 주세요';
+    return;
+  }
+  if (pick.kind === 'track' && (!yt.loaded || yt.videoId !== pick.track.videoId)) {
+    $('track-msg').textContent = '영상이 아직 준비되지 않았습니다 — 잠시 뒤 다시';
+    return;
+  }
+  if (continueMs === undefined) stopMedia();
+  chart = c;
+  driftEma = 0;
+  driftTotal = 0;
+  if (continueMs !== undefined) {
+    // 이미 지나간 노트는 빼고, 한 박 반 뒤부터
+    const from = continueMs + c.beatMs * 1.5;
+    chart = c = { ...c, notes: c.notes.filter((n) => n.time >= from) };
+  }
+  // 킥 자동: 킥 노트는 판정에서 빼고, 연습곡이면 그 자리에 킥 소리를 대신 낸다 (내 노래는 음악에 킥이 이미 있음)
+  const kicks = settings.autoKick ? chart.notes.filter((n) => n.lane === KICK) : [];
+  game = new RhythmGame(settings.autoKick ? chart.notes.filter((n) => n.lane !== KICK) : chart.notes);
+  popups.length = 0;
   events = [];
+
+  if (pick.kind === 'track') {
+    // 내 노래: 노래 자체가 박자를 알려 주므로 카운트인 · 메트로놈 · 가이드 소리 없이 노래만
+    media = 'youtube';
+    if (continueMs === undefined) {
+      songStart = performance.now();
+      mediaLastT = 0;
+      yt.play(0);
+    }
+    setState('play');
+    $('hud-title').textContent = titleOf(pick);
+    return;
+  }
+
+  song = pick.song;
+  // 소리 이벤트 목록: 카운트인(항상) + 메트로놈 + 가이드
   for (let i = 0; i < LEAD_IN_BEATS; i++) {
     events.push({ time: -(LEAD_IN_BEATS - i) * chart.beatMs, kind: 'click', lane: 0, accent: i === 0 });
   }
@@ -205,8 +333,9 @@ function startSong(): void {
     chart.beats.forEach((b, i) => events.push({ time: b, kind: 'click', lane: 0, accent: i % 4 === 0 }));
   }
   if (settings.guide) {
-    for (const n of chart.notes) events.push({ time: n.time, kind: 'guide', lane: n.lane, accent: false });
+    for (const n of game.notes) events.push({ time: n.time, kind: 'guide', lane: n.lane, accent: false });
   }
+  for (const n of kicks) events.push({ time: n.time, kind: 'auto', lane: KICK, accent: false });
   events.sort((a, b) => a.time - b.time);
   nextEvent = 0;
 
@@ -218,16 +347,44 @@ function startSong(): void {
 
 function finishSong(): void {
   if (!game) return;
-  const prev = best[song.id];
+  stopMedia();
+  const key = bestKey(pick);
+  const prev = best[key];
   if (!prev || game.score > prev.score) {
-    best[song.id] = { score: game.score, rank: game.rank };
+    best[key] = { score: game.score, rank: game.rank };
     save('airband.rhythm.best', best);
   }
   showResult();
   setState('result');
 }
 
+function stopMedia(): void {
+  if (media === 'youtube') yt.pause();
+  media = 'none';
+}
+
+/**
+ * 유튜브 시계: 영상 재생 위치로 songStart(곡 0ms의 performance 시각)를 맞춘다. 매 프레임.
+ * [설명] getCurrentTime()은 값이 띄엄띄엄 바뀔 수 있어서, 값이 바뀐 순간에만 읽고 조금씩(15%) 따라간다.
+ *   200ms 넘게 어긋나면(넘기기 · 버퍼링 뒤) 한 번에 맞춘다. 멈춰 있으면 시계도 그 자리에 붙잡는다.
+ */
+function syncMediaClock(now: number): void {
+  if (media !== 'youtube') return;
+  if (yt.playing) {
+    const tm = yt.timeMs;
+    if (tm !== mediaLastRead) {
+      mediaLastRead = tm;
+      const d = now - tm - songStart;
+      songStart = Math.abs(d) > 200 ? now - tm : songStart + d * 0.15;
+    }
+    mediaLastT = now - songStart;
+  } else {
+    songStart = now - mediaLastT;
+  }
+}
+
 function quitToMenu(): void {
+  stopMedia();
   game = null;
   chart = null;
   events = [];
@@ -237,6 +394,9 @@ function quitToMenu(): void {
 
 function setState(s: State): void {
   state = s;
+  document.body.classList.toggle('playing', s === 'play');
+  $('dock').hidden = s !== 'menu';
+  if (s !== 'menu') $('settings').hidden = true;
   $('menu').hidden = s !== 'menu';
   $('result').hidden = s !== 'result';
   $('hud').hidden = s !== 'play';
@@ -254,6 +414,10 @@ function setState(s: State): void {
  */
 function onInput(cls: number, perfTime: number, velocity = INPUT_VELOCITY): void {
   if (cls < 0 || cls >= DRUMS) return;
+  if (tapping) {
+    addTap(perfTime);
+    return;
+  }
   void audio.resume();
   audio.play(cls, velocity);
   scene.hit(cls, velocity);
@@ -265,11 +429,31 @@ function onInput(cls: number, perfTime: number, velocity = INPUT_VELOCITY): void
   const r = game.hit(cls, t);
   if (r) {
     popups.push({ lane: cls, judgement: r.judgement, at: now, delta: r.delta });
+    showJudge(r.judgement, r.delta);
+    if (media === 'youtube') followDrift(r.delta);
     return;
   }
   // 타이밍은 맞는데 다른 드럼을 쳤다 → 쳐야 했던 줄에 방향 힌트
   const want = game.pendingNear(t);
   if (want && want.lane !== cls) hints.push({ lane: want.lane, text: directionHint(cls, want.lane), at: now });
+}
+
+/**
+ * 유튜브 곡 박자 따라가기: 탭으로 맞춘 BPM이 0.2%만 틀려도 3분 뒤엔 0.4초 어긋난다.
+ * 사람은 노래를 듣고 치므로, 친 시각이 계속 한쪽으로 밀리면 노래 쪽 박자가 밀린 것 → 남은 노트를 절반씩 옮긴다.
+ * 한 번에 많이 옮기지 않고(±40ms), 전체로도 ±600ms까지만.
+ */
+function followDrift(delta: number): void {
+  if (!game || !chart) return;
+  driftEma = driftEma * 0.7 + delta * 0.3;
+  if (Math.abs(driftEma) < 18) return;
+  const shift = Math.max(-40, Math.min(40, driftEma * 0.5));
+  if (Math.abs(driftTotal + shift) > 600) return;
+  driftTotal += shift;
+  driftEma -= shift;
+  for (const n of game.notes) if (!n.judgement) n.time += shift;
+  const now = performance.now() - songStart;
+  chart.beats = chart.beats.map((b) => (b > now ? b + shift : b));
 }
 
 /** 친 드럼 → 쳐야 했던 드럼으로 가려면 스틱을 어느 쪽으로 */
@@ -286,39 +470,32 @@ function directionHint(hit: number, want: number): string {
 conn.onHit = (e) => {
   const offset = e.receivedAt - e.boardMs;
   if (offset < minOffset) minOffset = offset;
-  sensorHit.add(e.cls);
-  renderStick();
   onInput(e.cls, e.boardMs + minOffset, e.velocity);
 };
 conn.onMotion = (m) => {
-  const changed = m.zone !== aimCls || performance.now() - aimAt > AIM_STALE_MS;
   aimCls = m.zone;
   aimAt = m.receivedAt;
   scene.setAim({ h: m.headingDeg, e: m.elevationDeg }, m.zone);
-  if (changed) renderStick();
 };
-
-function recenter(): void {
-  if (statusEl.dataset.state !== 'connected') return;
-  void conn.send(CMD.recenter);
-  recentered = true;
-  renderStick();
-}
 
 window.addEventListener('keydown', (ev) => {
   if (ev.repeat || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  if (ev.target instanceof HTMLInputElement && ev.target.type !== 'range') return; // 링크 입력 중
+  if (tapping && ev.key === 'Escape') {
+    ev.preventDefault();
+    stopTapping();
+    return;
+  }
   const cls = KEY_TO_DRUM[ev.key.toLowerCase()];
   if (cls !== undefined) {
     ev.preventDefault();
     onInput(cls, ev.timeStamp);
     return;
   }
-  if (ev.key === 'c' || ev.key === 'C') {
-    recenter();
-    return;
-  }
+  if (ev.key === 'c' || ev.key === 'C') return calibrate('center');
+  if (ev.key === 'a' || ev.key === 'A') return calibrate('axis');
   if (ev.key === 'Escape' && state === 'play') quitToMenu();
-  if (ev.key === 'Enter' && state !== 'play') {
+  if (ev.key === 'Enter' && state !== 'play' && !(ev.target instanceof HTMLButtonElement)) {
     ev.preventDefault();
     startSong();
   }
@@ -345,6 +522,7 @@ canvas.addEventListener('pointerdown', (ev) => {
 // 탭을 떠나면 시계가 어긋나므로 곡을 멈춘다
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && state === 'play') quitToMenu();
+  if (document.hidden) stopTapping();
 });
 
 // ---------------------------------------------------------------------------
@@ -352,7 +530,7 @@ document.addEventListener('visibilitychange', () => {
 // ---------------------------------------------------------------------------
 let W = 0;
 let H = 0;
-const dark = window.matchMedia('(prefers-color-scheme: dark)');
+const dark = { matches: true }; // 리듬 게임은 항상 어두운 화면
 
 function resize(): void {
   const dpr = window.devicePixelRatio || 1;
@@ -444,14 +622,9 @@ function drawKitOverlay(c: CanvasRenderingContext2D, now: number): void {
     const st = JUDGE_STYLE[p.judgement];
     c.globalAlpha = 1 - age;
     c.fillStyle = `hsl(${st.hue}, 90%, 65%)`;
-    c.font = '800 20px system-ui, sans-serif';
+    // 큰 글자는 화면 맨 위(showJudge). 드럼 위에는 어느 드럼이었는지만 작게
+    c.font = '800 15px system-ui, sans-serif';
     c.fillText(st.text, x, y - age * 30);
-    if (p.judgement !== 'miss' && Math.abs(p.delta) > WINDOW_MS.perfect) {
-      c.font = '12px system-ui, sans-serif';
-      c.fillStyle = 'rgba(255,255,255,0.7)';
-      const d = Math.round(p.delta);
-      c.fillText(d < 0 ? `빠름 ${-d}ms` : `늦음 ${d}ms`, x, y + 16 - age * 30);
-    }
     c.globalAlpha = 1;
   }
   for (let i = hints.length - 1; i >= 0; i--) {
@@ -467,14 +640,6 @@ function drawKitOverlay(c: CanvasRenderingContext2D, now: number): void {
     c.font = '800 17px system-ui, "Noto Sans KR", sans-serif';
     c.fillText(h.text, x, y - 26 - age * 20);
     c.globalAlpha = 1;
-  }
-  if (game && game.combo >= 5) {
-    const w = kitCanvas.clientWidth;
-    c.fillStyle = 'rgba(255,255,255,0.9)';
-    c.font = '900 40px system-ui, sans-serif';
-    c.fillText(String(game.combo), w / 2, 92);
-    c.font = '700 12px system-ui, sans-serif';
-    c.fillText('COMBO', w / 2, 110);
   }
 }
 
@@ -515,11 +680,11 @@ function draw(now: number): void {
   ctx2d.fillRect(left, hitY + 58, trackW, H - hitY - 58);
 
   // 박자선 (마디 첫 박은 진하게)
-  if (chart) {
+  if (chart && chart.beats.length) {
     const firstBeat = -LEAD_IN_BEATS;
     const lastBeat = chart.beats.length;
     for (let b = firstBeat; b <= lastBeat; b++) {
-      const y = yOf(b * chart.beatMs);
+      const y = yOf(b >= 0 && b < lastBeat ? chart.beats[b] : chart.beats[0] + b * chart.beatMs);
       if (y < -10 || y > hitY) continue;
       ctx2d.fillStyle = isDark ? `rgba(255,255,255,${b % 4 === 0 ? 0.16 : 0.06})` : `rgba(0,0,0,${b % 4 === 0 ? 0.14 : 0.05})`;
       ctx2d.fillRect(left, y, trackW, b % 4 === 0 ? 2 : 1);
@@ -626,32 +791,27 @@ function draw(now: number): void {
     ctx2d.globalAlpha = 1;
   }
 
-  // 콤보
-  if (game && game.combo >= 5) {
-    ctx2d.fillStyle = isDark ? 'rgba(255,255,255,0.85)' : 'rgba(15,23,42,0.85)';
-    ctx2d.font = '900 44px system-ui, sans-serif';
-    ctx2d.fillText(String(game.combo), left + trackW / 2, H * 0.34);
-    ctx2d.font = '700 13px system-ui, sans-serif';
-    ctx2d.fillText('COMBO', left + trackW / 2, H * 0.34 + 22);
-  }
 }
 
 // ---------------------------------------------------------------------------
 // 매 프레임
 // ---------------------------------------------------------------------------
 function frame(now: number): void {
+  syncMediaClock(now);
+  if (tapping) renderTapping();
   if (state === 'play' && game && chart) {
     const t = now - songStart;
     scheduleAudio(t);
 
     for (const n of game.update(t - settings.offsetMs)) {
       popups.push({ lane: n.lane, judgement: 'miss', at: now, delta: 0 });
+      showJudge('miss', 0);
     }
 
     // 카운트다운 숫자
     const countEl = $('count');
-    if (t < 0) {
-      const left = Math.ceil(-t / chart.beatMs);
+    if (t < chart.startMs) {
+      const left = Math.ceil((chart.startMs - t) / chart.beatMs);
       countEl.hidden = left > LEAD_IN_BEATS;
       countEl.textContent = String(left);
     } else {
@@ -660,6 +820,7 @@ function frame(now: number): void {
 
     updateHud(t);
     if (game.finished && t > chart.durationMs) finishSong();
+    else if (media === 'youtube' && yt.state === YT_STATE.ended) finishSong();
   }
   draw(now);
   requestAnimationFrame(frame);
@@ -678,29 +839,322 @@ function updateHud(t: number): void {
 // ---------------------------------------------------------------------------
 // 메뉴 · 결과 화면
 // ---------------------------------------------------------------------------
-function renderSongs(): void {
-  const list = $('songs');
-  list.replaceChildren();
-  for (const s of SONGS) {
-    const c = buildChart(s);
-    const b = best[s.id];
-    const el = document.createElement('button');
-    el.className = 'song';
-    el.setAttribute('aria-pressed', String(s.id === song.id));
-    el.innerHTML = `
-      <span class="t">${s.title}</span>
-      <span class="lv">${'★'.repeat(s.level)}${'☆'.repeat(3 - s.level)}</span>
-      <span class="d">${s.description}</span>
-      <span class="info">BPM ${s.bpm} · 노트 ${c.notes.length}개 · ${Math.round(c.durationMs / 1000)}초${
-        b ? ` · 최고 기록 ${b.rank} ${b.score.toLocaleString('ko-KR')}점` : ''
-      }</span>`;
-    el.addEventListener('click', () => {
-      song = s;
+const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const mmss = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, '0')}`;
+
+const LV_HUE: Record<Level, number> = { 1: 150, 2: 200, 3: 265, 4: 330 };
+const samePick = (a: Pick_, b: Pick_) =>
+  a.kind === b.kind && (a.kind === 'song' ? a.song === (b as { song: Song }).song : a.kind === 'pop' ? a.pop === (b as { pop: PopSong }).pop : a.track === (b as { track: Track }).track);
+/** 인기곡의 유튜브 곡 (없으면 만들어서 목록에 넣는다. 박자는 브라우저에 저장) */
+function popTrack(p: PopSong): Track {
+  let t = tracks.find((x) => x.pop === p || x.videoId === p.videoId);
+  if (!t) {
+    t = { id: `yt:${p.videoId}`, title: '', videoId: p.videoId, mediaMs: 0 };
+    tracks.push(t);
+  }
+  t.pop = p;
+  t.title = `${p.title} — ${p.artist}`;
+  return t;
+}
+
+/** 곡 카드: 표지(색 + 그림) · 난이도 · 최고 등급 · 제목 · 설명 */
+function card(it: Pick_): HTMLButtonElement {
+  const el = document.createElement('button');
+  el.className = 'card';
+  el.setAttribute('aria-pressed', String(samePick(it, pick) || (it.kind === 'pop' && pick.kind === 'track' && pick.track.pop === it.pop)));
+  let level: Level;
+  let emoji = '🎵';
+  let title: string;
+  let sub: string;
+  let desc = '';
+  let need = '';
+  let saved: Track | undefined;
+  if (it.kind === 'song') {
+    level = it.song.level;
+    emoji = it.song.emoji ?? '🥁';
+    title = it.song.title;
+    const c = buildChart(it.song);
+    sub = `BPM ${it.song.bpm} · ${Math.round(c.durationMs / 1000)}초`;
+    desc = it.song.description;
+  } else if (it.kind === 'pop') {
+    level = it.pop.level;
+    emoji = it.pop.emoji;
+    title = it.pop.title;
+    sub = it.pop.artist;
+    desc = it.pop.why;
+    saved = tracks.find((t) => t.pop === it.pop);
+    need = saved?.grid ? '▶ 바로 시작' : '▶ 유튜브';
+  } else {
+    const t = it.track;
+    level = settings.level;
+    emoji = '▶️';
+    title = t.title;
+    sub = `유튜브${t.grid ? ` · BPM ${(60000 / t.grid.beatMs).toFixed(0)}` : ''}${t.mediaMs ? ` · ${mmss(t.mediaMs)}` : ''}`;
+    desc = t.grid ? '박자 저장됨 — 바로 시작' : '처음 한 번 박자 8번 탭';
+  }
+  const b = best[bestKey(it)];
+  el.style.setProperty('--h', String(LV_HUE[level] + (title.length * 7) % 40));
+  el.innerHTML = `
+    <div class="cover">${emoji}<span class="lv">${LEVEL_NAMES[level]}</span>${b ? `<span class="rank">${b.rank}</span>` : ''}${need ? `<span class="need">${need}</span>` : ''}</div>
+    <div class="body"><span class="t">${escapeHtml(title)}</span><span class="a">${escapeHtml(sub)}</span>${desc ? `<span class="d">${escapeHtml(desc)}</span>` : ''}</div>`;
+  if (it.kind === 'track') {
+    const del = document.createElement('span');
+    del.className = 'del';
+    del.textContent = '✕';
+    del.title = '목록에서 지우기';
+    del.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      tracks.splice(tracks.indexOf(it.track), 1);
+      saveTracks();
+      if (samePick(it, pick)) selectPick({ kind: 'song', song: SONGS[0] });
       renderSongs();
     });
-    el.addEventListener('dblclick', startSong);
-    list.append(el);
+    el.append(del);
   }
+  el.addEventListener('click', () => selectPick(it.kind === 'pop' ? { kind: 'track', track: popTrack(it.pop) } : it));
+  el.addEventListener('dblclick', startSong);
+  return el;
+}
+
+function renderSongs(): void {
+  for (const b of document.querySelectorAll<HTMLButtonElement>('#tabs button')) b.setAttribute('aria-selected', String(b.dataset.tab === tab));
+  const filters = $('filters');
+  filters.replaceChildren();
+  for (const lv of [0, 1, 2, 3, 4] as (0 | Level)[]) {
+    if (tab === 'mine') break;
+    const f = document.createElement('button');
+    f.textContent = lv === 0 ? '전체' : LEVEL_NAMES[lv];
+    f.setAttribute('aria-pressed', String(levelFilter === lv));
+    f.addEventListener('click', () => {
+      levelFilter = lv;
+      renderSongs();
+    });
+    filters.append(f);
+  }
+  const list = $('songs');
+  list.replaceChildren();
+  const items: Pick_[] =
+    tab === 'practice'
+      ? SONGS.filter((s) => !levelFilter || s.level === levelFilter).map((s) => ({ kind: 'song' as const, song: s }))
+      : tab === 'pop'
+        ? POP_SONGS.filter((p) => !levelFilter || p.level === levelFilter).map((p) => ({ kind: 'pop' as const, pop: p }))
+        : tracks.filter((t) => !t.pop).map((t) => ({ kind: 'track' as const, track: t }));
+  for (const it of items) list.append(card(it));
+  if (!items.length) {
+    const e = document.createElement('div');
+    e.className = 'empty';
+    e.textContent = tab === 'mine' ? '아직 없어요 — 위 칸에 유튜브 링크를 붙여 넣으면 여기에 생깁니다' : '이 난이도의 곡이 없어요';
+    list.append(e);
+  }
+  $('mytrack').hidden = tab !== 'mine';
+  renderDock();
+}
+
+/** 아래 막대: 고른 곡 · 난이도(유튜브 곡만) · 시작 */
+function renderDock(): void {
+  $('sel-title').textContent = titleOf(pick);
+  const c = chartOf(pick);
+  const notes = c ? c.notes.filter((n) => !settings.autoKick || n.lane !== KICK).length : 0;
+  const t = pick.kind === 'track' ? pick.track : null;
+  $('sel-info').textContent =
+    t && !t.grid
+      ? `처음 한 번: 노래가 나오면 ${tapHintOf(t)} ${TAPS_NEEDED}번 탭 → 바로 게임`
+      : c
+        ? `${pick.kind === 'song' ? LEVEL_NAMES[pick.song.level] : LEVEL_NAMES[settings.level]} · 노트 ${notes}개${settings.autoKick ? ' · 킥 자동' : ''}`
+        : '';
+  $('opt-level').hidden = pick.kind === 'song';
+  $('start').textContent = t && !t.grid ? '▶ 노래 틀기' : '▶ 시작';
+  $('yt-sync').hidden = !t;
+  $('yt-resync').hidden = !t?.grid || !!tapping;
+}
+
+function selectPick(p: Pick_): void {
+  if (p.kind === 'pop') p = { kind: 'track', track: popTrack(p.pop) };
+  if (p.kind === 'track' && p.track.pop && !(pick.kind === 'track' && pick.track === p.track)) {
+    // 인기곡을 새로 고르면 추천 난이도로
+    settings.level = p.track.pop.level;
+    save('airband.rhythm.settings', settings);
+    renderLevelSeg();
+  }
+  if (tapping && !(p.kind === 'track' && p.track === tapping)) stopTapping();
+  pick = p;
+  if (p.kind === 'song') song = p.song;
+  const t = p.kind === 'track' ? p.track : null;
+  $('yt-box').hidden = !t;
+  if (t && yt.videoId !== t.videoId) {
+    void yt.load(t.videoId).then(
+      () => {
+        if (yt.title && !t.pop && t.title !== yt.title) {
+          t.title = yt.title;
+          saveTracks();
+          if (pick.kind === 'track' && pick.track === t) selectPick(pick);
+          else renderSongs();
+        }
+      },
+      (err) => ($('track-msg').textContent = `⚠ ${err instanceof Error ? err.message : err}`),
+    );
+  }
+  $('track-msg').textContent = t
+    ? t.grid
+      ? `🎬 ${t.title} — 박자 저장됨 (BPM ${(60000 / t.grid.beatMs).toFixed(1)}). ▶ 시작을 누르세요`
+      : `🎬 ${t.title} — ▶ 노래 틀기를 누르고, 노래에서 ${tapHintOf(t)} 스페이스(또는 스틱)를 ${TAPS_NEEDED}번 치면 바로 시작합니다`
+    : '';
+  renderSongs();
+}
+
+// ---------------------------------------------------------------------------
+// 유튜브 노래: 링크 추가 · 박자 탭 → 바로 게임
+// ---------------------------------------------------------------------------
+// [설명] 흐름: ▶ 노래 틀기 → 영상 재생 → 박마다(인기곡은 "짝"마다) 탭 8번 → 박자 격자 → 영상을 멈추지 않고 지금 위치부터 게임.
+//   박자는 브라우저에 저장되어 다음부터는 ▶ 시작으로 처음부터 바로 친다. 곡 중간에 박자가 조금 밀려도 followDrift가 따라간다.
+const TAPS_NEEDED = 8;
+const tapHintOf = (t: Track) => t.pop?.tapHint ?? '박(쿵 · 짝)마다';
+
+yt.onError = (msg) => {
+  $('track-msg').textContent = `⚠ ${msg}`;
+  stopTapping();
+};
+
+async function addYouTube(): Promise<void> {
+  const input = $<HTMLInputElement>('yt-url');
+  const id = parseVideoId(input.value);
+  if (!id) {
+    if (input.value.trim()) $('track-msg').textContent = '유튜브 링크를 알아볼 수 없습니다 (예: https://www.youtube.com/watch?v=… 또는 https://youtu.be/…)';
+    return;
+  }
+  input.value = '';
+  const pop = POP_SONGS.find((p) => p.videoId === id);
+  let t = pop ? popTrack(pop) : tracks.find((x) => x.videoId === id);
+  if (!t) {
+    t = { id: `yt:${id}`, title: '유튜브 영상 불러오는 중…', videoId: id, mediaMs: 0 };
+    tracks.push(t);
+    saveTracks();
+  }
+  selectPick({ kind: 'track', track: t });
+}
+
+/** 영상을 처음부터 틀고 탭을 받기 시작 (영상이 아직 안 불러졌으면 기다렸다가) */
+async function startTapping(t: Track): Promise<void> {
+  if (!yt.loaded || yt.videoId !== t.videoId) {
+    $('track-msg').textContent = '영상 불러오는 중…';
+    try {
+      await yt.load(t.videoId);
+    } catch (err) {
+      $('track-msg').textContent = `⚠ ${err instanceof Error ? err.message : err}`;
+      return;
+    }
+  }
+  void audio.resume();
+  stopMedia();
+  tapping = t;
+  taps = [];
+  media = 'youtube';
+  songStart = performance.now();
+  mediaLastT = 0;
+  yt.play(0);
+  renderTapping();
+  renderDock();
+}
+
+function fitOf(t: Track, xs: number[]) {
+  return t.pop ? fitKnownTaps(xs, t.pop.bpm, t.pop.tapEvery) : fitTaps(xs);
+}
+
+function addTap(perfTime: number): void {
+  const t = tapping;
+  if (!t || !yt.playing) return;
+  taps.push(perfTime - songStart);
+  scene.hit(0, 90);
+  audio.play(0, 60);
+  const pad = $('yt-tap');
+  pad.classList.remove('flash');
+  void pad.offsetWidth; // 애니메이션 다시 시작
+  pad.classList.add('flash');
+  if (taps.length >= TAPS_NEEDED && fitOf(t, taps)) return finishTapping();
+  if (taps.length >= TAPS_NEEDED + 8) {
+    // 계속 못 맞추면 처음부터
+    taps = [];
+    $('track-msg').textContent = '⚠ 간격이 들쭉날쭉해요 — 같은 간격으로 다시 8번';
+    return;
+  }
+  renderTapping();
+}
+
+function renderTapping(): void {
+  const t = tapping;
+  document.body.classList.toggle('tapping', !!t);
+  $('tap-overlay').hidden = !t;
+  if (!t) return;
+  const left = TAPS_NEEDED - taps.length;
+  $('tap-title').textContent = taps.length === 0 ? '노래에 맞춰 탭!' : left > 0 ? `${left}번 더` : '같은 간격으로 계속';
+  $('tap-hint').textContent = `${tapHintOf(t)} 스페이스 · 스틱 · 아래 버튼 — ${TAPS_NEEDED}번 치면 바로 게임 시작`;
+  $('tap-dots').innerHTML = Array.from({ length: TAPS_NEEDED }, (_, i) => `<i class="${i < taps.length ? 'on' : ''}"></i>`).join('');
+  $('track-msg').textContent =
+    taps.length === 0
+      ? `🎵 노래가 나오면 ${tapHintOf(t)} 스페이스 · 스틱 · 👏 버튼 — ${TAPS_NEEDED}번 치면 바로 게임 시작`
+      : left > 0
+        ? `👏 ${taps.length}번 — ${left}번 더`
+        : '박자를 아직 못 잡았어요 — 같은 간격으로 계속';
+}
+
+/** 탭으로 박자를 정하고, 영상을 멈추지 않고 지금 위치부터 게임 */
+function finishTapping(): void {
+  const t = tapping;
+  if (!t) return;
+  const fit = fitOf(t, taps);
+  if (!fit) return;
+  t.grid = fit.grid;
+  t.taps = taps.map((x) => Math.round(x));
+  if (yt.durationMs > 0) t.mediaMs = yt.durationMs;
+  saveTracks();
+  tapping = null;
+  renderTapping();
+  startGame(performance.now() - songStart);
+}
+
+function stopTapping(): void {
+  if (!tapping) return;
+  tapping = null;
+  stopMedia();
+  renderTapping();
+  renderDock();
+}
+
+function setupTracks(): void {
+  const url = $<HTMLInputElement>('yt-url');
+  $('yt-load').addEventListener('click', () => void addYouTube());
+  url.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') void addYouTube();
+  });
+  // 붙여 넣으면 바로 추가
+  url.addEventListener('paste', () => setTimeout(() => void addYouTube(), 0));
+  $('yt-tap').addEventListener('pointerdown', (ev) => {
+    ev.preventDefault();
+    addTap(ev.timeStamp);
+  });
+  $('tap-cancel').addEventListener('click', stopTapping);
+  $('yt-resync').addEventListener('click', () => {
+    if (pick.kind !== 'track') return;
+    pick.track.grid = undefined;
+    pick.track.taps = undefined;
+    saveTracks();
+    startSong();
+  });
+  renderLevelSeg();
+  for (const b of document.querySelectorAll<HTMLButtonElement>('#tabs button')) {
+    b.addEventListener('click', () => {
+      tab = b.dataset.tab as Tab;
+      levelFilter = 0;
+      renderSongs();
+    });
+  }
+}
+
+function renderLevelSeg(): void {
+  segmented<Level>('opt-level', [[1, '아주 쉬움'], [2, '쉬움'], [3, '보통'], [4, '어려움']], () => settings.level, (v) => {
+    settings.level = v;
+    renderSongs();
+  });
 }
 
 /** 버튼 여러 개 중 하나를 고르는 옵션 */
@@ -728,13 +1182,17 @@ function formatOffset(ms: number): string {
 }
 
 function setupOptions(): void {
+  segmented('opt-autokick', [[true, '자동'], [false, '내가 치기']], () => settings.autoKick, (v) => {
+    settings.autoKick = v;
+    renderDock();
+  });
   segmented('opt-guide', [[true, '켜기'], [false, '끄기']], () => settings.guide, (v) => (settings.guide = v));
   segmented('opt-metro', [[true, '켜기'], [false, '끄기']], () => settings.metronome, (v) => (settings.metronome = v));
   segmented<Settings['view']>('opt-view', [['kit', '드럼 키트'], ['lanes', '줄']], () => settings.view, (v) => {
     settings.view = v;
     applyView();
   });
-  segmented('opt-speed', [[0.75, '느리게'], [1, '보통'], [1.5, '빠르게'], [2, '아주 빠르게']], () => settings.speed, (v) => (settings.speed = v));
+  segmented('opt-speed', [[0.75, '느리게'], [1, '보통'], [1.5, '빠르게']], () => settings.speed, (v) => (settings.speed = v));
 
   const range = $<HTMLInputElement>('opt-offset');
   const out = $('opt-offset-out');
@@ -750,7 +1208,7 @@ function setupOptions(): void {
 function showResult(): void {
   if (!game) return;
   const rankHue: Record<string, number> = { S: 45, A: 150, B: 200, C: 270, D: 0 };
-  $('res-title').textContent = song.title;
+  $('res-title').textContent = titleOf(pick);
   const rankEl = $('res-rank');
   rankEl.textContent = game.rank;
   rankEl.style.color = `hsl(${rankHue[game.rank]}, 80%, ${dark.matches ? 62 : 45}%)`;
@@ -788,88 +1246,59 @@ function showResult(): void {
 // ---------------------------------------------------------------------------
 // 연결 UI (자유 연주 화면과 같은 방식)
 // ---------------------------------------------------------------------------
-const connectBtn = $<HTMLButtonElement>('connect');
-const statusEl = $('status');
-
-conn.onState = (s, detail) => {
-  statusEl.dataset.state = s;
+conn.onState = (s) => {
   if (s === 'connected') {
     minOffset = Infinity;
-    void conn.send(CMD.motionOn); // 겨눈 줄 표시용
-  } else if (s === 'disconnected') {
-    aimAt = -Infinity;
-    recentered = false;
-    sensorHit.clear();
-  }
-  renderStick();
-  statusEl.textContent = s === 'connected' ? `연결됨 · ${detail ?? ''}` : s === 'connecting' ? '연결 중…' : detail ? `연결 안 됨 · ${detail}` : '연결 안 됨';
-  connectBtn.textContent = s === 'connected' ? '연결 끊기' : s === 'connecting' ? '연결 중…' : '센서 연결';
-  connectBtn.disabled = s === 'connecting';
+    void conn.send(CMD.motionOn); // 겨눈 곳 표시용
+  } else if (s === 'disconnected') aimAt = -Infinity;
+  renderStickLine();
 };
-
-connectBtn.addEventListener('click', async () => {
+// 위 메뉴의 "스틱 연결"이 이 숨은 버튼들을 누른다 (ui/header.ts)
+$('connect').addEventListener('click', async () => {
   await audio.resume();
-  if (statusEl.dataset.state === 'connected') {
-    conn.disconnect();
-    return;
-  }
+  if (stickConnected()) return conn.disconnect();
   try {
     await conn.connect();
   } catch (err) {
     console.warn('BLE 연결 실패', err);
   }
 });
+// 폰 단독 모드: 권한 요청이 클릭 안에서 일어나야 하므로 connectPhone()을 await보다 먼저 부른다
+$('phone').addEventListener('click', () => {
+  const started = conn.isPhone ? (conn.disconnect(), Promise.resolve()) : conn.connectPhone();
+  void audio.resume();
+  started.catch((err) => console.warn('폰 센서 시작 실패', err));
+});
+attachStick(conn, { kind: 'stick', zones: true });
 
-// ---------------------------------------------------------------------------
-// 스틱 준비 (메뉴): ① 연결 ② 정면 맞추기 ③ 방향마다 한 번씩 쳐 보기
-// ---------------------------------------------------------------------------
-const STICK_ORDER = [2, 0, 3, 4, KICK]; // 하이햇 · 스네어 · 탐 · 크래시 · 킥
-
-function renderStick(): void {
-  const connected = statusEl.dataset.state === 'connected';
+/** 메뉴 오른쪽 위 한 줄: 스틱 상태 · 지금 겨눈 드럼 */
+function renderStickLine(): void {
   const motion = performance.now() - aimAt < AIM_STALE_MS;
-  $('step-connect').classList.toggle('done', connected);
-  $('step-center').classList.toggle('done', recentered);
-  const allHit = STICK_ORDER.every((c) => sensorHit.has(c));
-  $('step-try').classList.toggle('done', allHit);
-  $<HTMLButtonElement>('recenter').disabled = !connected;
-  const chips = $('chips');
-  chips.replaceChildren();
-  for (const cls of STICK_ORDER) {
-    const chip = document.createElement('span');
-    chip.className = 'chip';
-    chip.style.setProperty('--hue', String(hueOf(cls)));
-    if (sensorHit.has(cls)) chip.classList.add('ok');
-    if (motion && cls === aimCls) chip.classList.add('aim');
-    chip.textContent = `${DRUM_NAMES[cls]} ${DIRECTION_OF[cls]}`;
-    chips.append(chip);
-  }
-  $('aim-now').textContent = !connected
-    ? '센서 연결 전 — 키보드 · 터치로도 할 수 있습니다'
+  $('stick-line').innerHTML = !stickConnected()
+    ? '스틱 없이도 OK — 키보드 <b>D F J K</b> · <b>스페이스</b>(킥) · 화면 터치'
     : motion
-      ? `지금 겨눈 곳: ${DRUM_NAMES[aimCls] ?? '?'}`
-      : '방향 데이터 없음 — 보드 버튼으로만 칠 수 있습니다 (IMU 확인)';
+      ? `🟢 스틱 연결됨 · 지금 겨눈 곳 <b>${DRUM_NAMES[aimCls] ?? '?'}</b>`
+      : '🟢 스틱 연결됨 · 방향 데이터 없음 (보드 버튼으로 칠 수 있어요)';
 }
-setInterval(renderStick, 500);
-$('recenter').addEventListener('click', recenter);
+setInterval(renderStickLine, 300);
 
 $('start').addEventListener('click', startSong);
 $('res-retry').addEventListener('click', startSong);
 $('res-menu').addEventListener('click', quitToMenu);
+$('settings-btn').addEventListener('click', () => ($('settings').hidden = !$('settings').hidden));
+document.addEventListener('pointerdown', (ev) => {
+  const st = $('settings');
+  if (!st.hidden && !st.contains(ev.target as Node) && ev.target !== $('settings-btn')) st.hidden = true;
+});
 
 // ---------------------------------------------------------------------------
 // 시작
 // ---------------------------------------------------------------------------
 async function init(): Promise<void> {
-  const support = webBluetoothSupport();
-  if (!support.ok) {
-    connectBtn.disabled = true;
-    const hint = $('connect-hint');
-    hint.textContent = support.reason!;
-    hint.hidden = false;
-  }
-  renderStick();
-  renderSongs();
+  renderStickLine();
+  setupTracks();
+  // 처음엔 인기곡 탭 · We Will Rock You
+  selectPick({ kind: 'pop', pop: POP_SONGS[0] });
   setupOptions();
   applyView();
   resize();

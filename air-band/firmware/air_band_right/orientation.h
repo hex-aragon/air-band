@@ -61,35 +61,77 @@ static inline float wrap180(float d) {
 // [설명] 가만히 있는데도 자이로가 0이 아닌 값(예: 0.5°/s)을 읽는 것이 bias다.
 //   1초에 0.5°면 1분에 30° 흘러간다. 부팅 때 한 번 재고(seed), 그 뒤에도 가만히 있는 순간마다
 //   아주 천천히 따라가게(track) 해서 온도 변화 등으로 바뀌는 오차를 줄인다.
+// [주의] "가만히 있나"는 bias를 뺀 값이 아니라 원본 자이로가 **흔들리지 않는지**(0.5초 동안 최대-최소)로 본다.
+//   예전에는 "bias를 뺀 회전 < 3°/s"로 봤는데, 부팅 때 움직여서 bias가 크게 틀리면(2026-10-14 실측 -14°/s)
+//   가만히 둬도 그 조건을 영영 못 넘어 bias가 고쳐지지 않았다 → 좌우 각도가 계속 흘러감(1.4°/s).
+//   천천히 일정하게 도는 동작을 bias로 착각하지 않도록, 지금 bias와 MAX_JUMP_DPS 넘게 다르면 받아들이지 않는다.
 class GyroBias {
  public:
   Vec3 bias = { 0, 0, 0 };
 
-  void seed(const Vec3& b) { bias = b; }
+  // trusted=false: 부팅 보정 중 움직여서 b를 믿을 수 없음 → 처음 정지할 때는 MAX_JUMP_DPS 제한 없이 바로 맞춘다
+  void seed(const Vec3& b, bool trusted = true) {
+    bias = b;
+    trusted_ = trusted;
+  }
 
   // raw: 자이로 원본(°/s), acc: 가속도(g). bias를 빼서 돌려주고, 정지 상태면 bias를 갱신한다.
   Vec3 correct(const Vec3& raw, const Vec3& acc) {
-    Vec3 g = { raw.x - bias.x, raw.y - bias.y, raw.z - bias.z };
     float an = sqrtf(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
-    float gn = sqrtf(g.x * g.x + g.y * g.y + g.z * g.z);
-    bool still = fabsf(an - 1.0f) < STILL_ACC_G && gn < STILL_GYRO_DPS;
-    stillCount_ = still ? (stillCount_ < 1000 ? stillCount_ + 1 : stillCount_) : 0;
-    if (stillCount_ >= STILL_SAMPLES) {
-      bias.x += TRACK_ALPHA * g.x;
-      bias.y += TRACK_ALPHA * g.y;
-      bias.z += TRACK_ALPHA * g.z;
+    const float v[3] = { raw.x, raw.y, raw.z };
+    if (n_ == 0) {
+      for (uint8_t k = 0; k < 3; k++) { lo_[k] = hi_[k] = v[k]; sum_[k] = 0; }
+      aLo_ = aHi_ = an;
     }
-    return g;
+    for (uint8_t k = 0; k < 3; k++) {
+      sum_[k] += v[k];
+      if (v[k] < lo_[k]) lo_[k] = v[k];
+      if (v[k] > hi_[k]) hi_[k] = v[k];
+    }
+    if (an < aLo_) aLo_ = an;
+    if (an > aHi_) aHi_ = an;
+    if (++n_ >= WINDOW) finishWindow();
+    return { raw.x - bias.x, raw.y - bias.y, raw.z - bias.z };
   }
 
-  bool isStill() const { return stillCount_ >= STILL_SAMPLES; }
+  bool isStill() const { return stillWindows_ >= STILL_WINDOWS; }
+  // 정지 판정으로 bias를 몇 번 고쳤는지 ('?' 상태 표시용)
+  uint32_t updates() const { return updates_; }
 
  private:
-  static constexpr float    STILL_ACC_G    = 0.05f;   // |가속도| - 1g 가 이보다 작고
-  static constexpr float    STILL_GYRO_DPS = 3.0f;    // 회전이 이보다 느린 상태가
-  static constexpr uint16_t STILL_SAMPLES  = 50;      // 0.5초(100Hz 기준) 이어지면 "정지"
-  static constexpr float    TRACK_ALPHA    = 0.002f;  // 정지 중 bias 추적 속도 (약 5초 시정수)
-  uint16_t stillCount_ = 0;
+  void finishWindow() {
+    float mean[3], spread = 0;
+    for (uint8_t k = 0; k < 3; k++) {
+      mean[k] = sum_[k] / n_;
+      if (hi_[k] - lo_[k] > spread) spread = hi_[k] - lo_[k];
+    }
+    float dx = mean[0] - bias.x, dy = mean[1] - bias.y, dz = mean[2] - bias.z;
+    float jump = sqrtf(dx * dx + dy * dy + dz * dz);
+    bool still = spread < STILL_SPREAD_DPS && (aHi_ - aLo_) < STILL_ACC_SPREAD_G && (jump < MAX_JUMP_DPS || !trusted_);
+    stillWindows_ = still ? (stillWindows_ < 1000 ? stillWindows_ + 1 : stillWindows_) : 0;
+    if (stillWindows_ >= STILL_WINDOWS) {
+      float a = trusted_ ? TRACK_ALPHA : 1.0f;   // 못 믿는 값이면 한 번에 바꾼다
+      bias.x += a * dx;
+      bias.y += a * dy;
+      bias.z += a * dz;
+      trusted_ = true;
+      updates_++;
+    }
+    n_ = 0;
+  }
+
+  static constexpr uint8_t  WINDOW            = 50;     // 0.5초(100Hz) 묶음으로 본다
+  static constexpr float    STILL_SPREAD_DPS  = 10.0f;  // 묶음 안 축별 (최대-최소)가 이보다 작고 (정지 시 1~7, 손에 들고 흔들면 수십)
+  static constexpr float    STILL_ACC_SPREAD_G = 0.06f; // |가속도|도 거의 안 변하고
+  static constexpr float    MAX_JUMP_DPS      = 30.0f;  // 지금 bias와 이보다 많이 다르면 "천천히 도는 중"으로 보고 무시
+  static constexpr uint16_t STILL_WINDOWS     = 2;      // 이런 묶음이 연속 2개(1초)면 "정지"
+  static constexpr float    TRACK_ALPHA       = 0.3f;   // 정지 묶음마다 차이의 30%씩 따라감 (약 1.5초면 거의 맞음)
+  uint8_t  n_ = 0;
+  float    sum_[3] = { 0, 0, 0 }, lo_[3] = { 0, 0, 0 }, hi_[3] = { 0, 0, 0 };
+  float    aLo_ = 0, aHi_ = 0;
+  uint16_t stillWindows_ = 0;
+  uint32_t updates_ = 0;
+  bool     trusted_ = true;
 };
 
 // ---------------------------------------------------------------------------
@@ -104,6 +146,13 @@ class StickOrientation {
     axis_ = stickAxis;
     kp_ = kp;
     trustG_ = trustG;
+  }
+
+  // 스틱 끝 축을 바꾼다 (축 보정 'a'). 좌우 기준은 새 축으로 다시 잡아야 하므로 recenter()도 부른다.
+  void setAxis(const Vec3& stickAxis) {
+    axis_ = stickAxis;
+    computeDirection();
+    recenter();
   }
 
   // 정지 상태 가속도로 초기 기울기를 바로 맞춘다 (좌우 방향은 0으로 시작). 부팅 때 한 번.
@@ -151,6 +200,11 @@ class StickOrientation {
     q0_ /= n; q1_ /= n; q2_ /= n; q3_ /= n;
 
     computeDirection();
+  }
+
+  // 지금 자세에서 중력이 센서 좌표로 어느 방향인지 (단위 g). 가속도 - 이것 = 움직임 때문에 생긴 가속도
+  Vec3 gravityBody() const {
+    return { 2.0f * (q1_ * q3_ - q0_ * q2_), 2.0f * (q0_ * q1_ + q2_ * q3_), q0_ * q0_ - q1_ * q1_ - q2_ * q2_ + q3_ * q3_ };
   }
 
   // 지금 스틱 방향을 기준(정면 · 스네어 자리)으로 삼는다

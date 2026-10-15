@@ -1,9 +1,10 @@
 // TinyML: 스틱 궤적 → 드럼 분류 모델 (데이터 · 학습 · 평가 · C 코드 내보내기)
 //
 // [한눈에 보기]
-//   입력  : 타격 직전 0.24초 동안의 스틱 방향 6개 (25Hz) = [좌우, 위아래] × 6 = 숫자 12개
-//   모델  : 아주 작은 신경망 (12 → 은닉 16 → 4). 가중치 약 280개 = float 1KB 남짓
-//   출력  : 스네어 · 하이햇 · 탐 · 크래시 중 하나 (킥은 발 = 버튼이라 제외)
+//   입력  : 타격 직전 0.24초 동안 6번 (25Hz) × [좌우°, 위아래°, 그 40ms 최대 가속도 g] = 숫자 18개
+//   모델  : 아주 작은 신경망 (18 → 은닉 16 → 5). 가중치 약 390개 = float 1.5KB 남짓
+//   출력  : 스네어 · 하이햇 · 탐 · 크래시 · 노이즈 중 하나 (킥은 발 = 버튼이라 제외)
+//           노이즈 = 걷기 · 스틱 들기 · 손 흔들기처럼 치지 않았는데 보드가 타격으로 잡은 동작 → 보드가 소리를 안 보낸다
 //
 //   지금 펌웨어는 "타격 순간 방향이 왼쪽 25° 넘으면 하이햇" 같은 고정 규칙(구역)으로 고른다.
 //   모델은 (1) 사람마다 다른 경계(어떤 사람은 하이햇을 20°만 돌려서 친다)와
@@ -14,17 +15,24 @@
 //   방향은 미분(역전파)으로 구하고, 고치는 보폭은 Adam이라는 방법이 자동으로 조절한다.
 //   배열 연산 라이브러리 없이 이 파일만으로 돈다 (모델이 작아서 브라우저에서 1초 안에 끝남).
 
-/** 모델이 고르는 드럼 class (audio.ts DRUM_CLASSES 번호). 출력 순서도 이 순서 */
-export const STICK_CLASSES = [0, 2, 3, 4] as const;
-/** 입력 창: 방향 샘플 개수와 간격 (펌웨어 zone_model.h에도 같은 값이 들어간다) */
+/** "치지 않는 동작" class 번호 — 드럼 번호와 겹치지 않게. 펌웨어 CLASS_NOISE(zone_model.h ZONE_MODEL_NOISE)와 같음 */
+export const NOISE = 9;
+/** 모델이 고르는 class (audio.ts DRUM_CLASSES 번호 + NOISE). 출력 순서도 이 순서 */
+export const STICK_CLASSES = [0, 2, 3, 4, NOISE] as const;
+/** 입력 창: 샘플 개수와 간격 (펌웨어 zone_model.h에도 같은 값이 들어간다) */
 export const WINDOW = 6;
 export const FEATURE_HZ = 25;
-export const INPUTS = WINDOW * 2;
+/** 샘플 하나의 값 개수: 좌우°, 위아래°, 최대 가속도 g */
+export const FEATS = 3;
+export const INPUTS = WINDOW * FEATS;
+
+/** 타격 순간(창의 마지막 샘플) 방향 */
+export const lastAim = (x: number[]) => ({ h: x[INPUTS - FEATS], e: x[INPUTS - FEATS + 1] });
 
 export interface Sample {
-  /** [h0, e0, h1, e1, …] 오래된 것 → 최신, 단위 도 */
+  /** [h0, e0, g0, h1, e1, g1, …] 오래된 것 → 최신, 단위 도 · g */
   x: number[];
-  /** 정답 드럼 class */
+  /** 정답 class (드럼 또는 NOISE) */
   y: number;
   /** 같은 타격에 대한 펌웨어 규칙(구역)의 판정. 모르면 -1 */
   rule: number;
@@ -87,10 +95,45 @@ const STYLE: Record<number, { h: number; e: number; sh: number; se: number; dh: 
   4: { h: 10, e: 29, sh: 16, se: 9, dh: 0, de: 14 }, // 크래시: 위로, 크게 들었다가 짧게
 };
 
+// 가속도 크기: 휘두르는 동안 1.5g 안팎, 멈추는 순간(타격) 3~7g로 치솟는다
+function swingG(rand: () => number, back: number): number {
+  return Math.max(0.3, 1.4 + (3.5 + rand() * 3) * (1 - back) ** 3 + gauss(rand) * 0.3);
+}
+
+// 노이즈: 보드가 2.5g 넘는 피크를 잡았지만 치는 동작이 아닌 것. 세 종류를 섞는다
+//   걷기(스틱이 아래를 향해 흔들림) · 스틱 들어 올리기(아래 → 위) · 아무렇게나 흔들기
+function noiseSample(rand: () => number): number[] {
+  const kind = Math.floor(rand() * 3);
+  const h0 = gauss(rand) * 40;
+  const x: number[] = [];
+  let h = h0;
+  let e = kind === 0 ? -55 + gauss(rand) * 10 : kind === 1 ? -40 + gauss(rand) * 10 : gauss(rand) * 25;
+  const peakAt = Math.floor(rand() * WINDOW);
+  for (let k = 0; k < WINDOW; k++) {
+    if (kind === 0) e += gauss(rand) * 6;
+    else if (kind === 1) e += 12 + gauss(rand) * 4;
+    else {
+      h += gauss(rand) * 12;
+      e += gauss(rand) * 12;
+    }
+    const g = k === peakAt ? 2.6 + rand() * 1.2 : 1 + Math.abs(gauss(rand)) * 0.5;
+    x.push(h + gauss(rand) * 3, e + gauss(rand) * 3, g);
+  }
+  return x;
+}
+
 export function synthesize(perClass: number, seed = Date.now()): Sample[] {
   const rand = rng(seed);
   const out: Sample[] = [];
   for (const cls of STICK_CLASSES) {
+    if (cls === NOISE) {
+      for (let n = 0; n < perClass; n++) {
+        const x = noiseSample(rand);
+        const a = lastAim(x);
+        out.push({ x, y: NOISE, rule: ruleZone(a.h, a.e), src: 'synthetic' });
+      }
+      continue;
+    }
     const st = STYLE[cls];
     for (let n = 0; n < perClass; n++) {
       const hEnd = st.h + gauss(rand) * st.sh;
@@ -102,8 +145,10 @@ export function synthesize(perClass: number, seed = Date.now()): Sample[] {
         const back = 1 - k / (WINDOW - 1); // 1 = 가장 오래된 샘플, 0 = 타격 순간
         x.push(hEnd + dh * back ** 1.5 + gauss(rand) * 3);
         x.push(eEnd + de * back ** 2 + gauss(rand) * 3);
+        x.push(swingG(rand, back));
       }
-      out.push({ x, y: cls, rule: ruleZone(x[INPUTS - 2], x[INPUTS - 1]), src: 'synthetic' });
+      const a = lastAim(x);
+      out.push({ x, y: cls, rule: ruleZone(a.h, a.e), src: 'synthetic' });
     }
   }
   return out;
@@ -337,7 +382,8 @@ export function toCHeader(m: Model, info: { samples: number; valAcc: number; rul
 //
 // 사용법: 이 파일을 firmware/air_band_right/ 폴더에 넣고 업로드하면 classifyHit()이 규칙 대신 이 모델을 쓴다.
 //         (air_band_right.ino의 USE_TINYML이 1이어야 함. 파일을 지우면 다시 규칙 기반)
-// 입력: 타격 직전 방향 ${WINDOW}개 (${FEATURE_HZ}Hz) [좌우°, 위아래°] × ${WINDOW}, 오래된 것 → 최신
+// 입력: 타격 직전 ${WINDOW}개 (${FEATURE_HZ}Hz) [좌우°, 위아래°, 40ms 최대 가속도 g] × ${WINDOW}, 오래된 것 → 최신
+// 출력이 ZONE_MODEL_NOISE(치지 않는 동작)면 보드는 그 타격을 보내지 않는다
 // 구조: ${INPUTS} → ${m.hidden}(ReLU) → ${K}  (가중치 ${m.w1.length + m.b1.length + m.w2.length + m.b2.length}개)
 #pragma once
 #include <stdint.h>
@@ -347,8 +393,9 @@ export function toCHeader(m: Model, info: { samples: number; valAcc: number; rul
 #define ZONE_MODEL_INPUTS ${INPUTS}
 #define ZONE_MODEL_HIDDEN ${m.hidden}
 #define ZONE_MODEL_OUTPUTS ${K}
+#define ZONE_MODEL_NOISE  ${NOISE}
 
-// 출력 순서 → 드럼 class (스네어 0 · 하이햇 2 · 탐 3 · 크래시 4)
+// 출력 순서 → class (스네어 0 · 하이햇 2 · 탐 3 · 크래시 4 · 노이즈 ${NOISE})
 static const uint8_t ZONE_MODEL_CLASSES[ZONE_MODEL_OUTPUTS] = { ${STICK_CLASSES.join(', ')} };
 
 static const float ZONE_MODEL_MEAN[ZONE_MODEL_INPUTS] = {
@@ -370,7 +417,7 @@ static const float ZONE_MODEL_B2[ZONE_MODEL_OUTPUTS] = {
 ${arr(m.b2)}
 };
 
-// x: [h0, e0, h1, e1, ...] (도). 반환: 드럼 class
+// x: [h0, e0, g0, h1, e1, g1, ...] (도, g). 반환: 드럼 class 또는 ZONE_MODEL_NOISE
 static inline uint8_t zoneModelPredict(const float* x) {
   float in[ZONE_MODEL_INPUTS];
   for (int i = 0; i < ZONE_MODEL_INPUTS; i++) in[i] = (x[i] - ZONE_MODEL_MEAN[i]) / ZONE_MODEL_STD[i];
@@ -396,7 +443,7 @@ static inline uint8_t zoneModelPredict(const float* x) {
 // CSV (데이터 백업 · 다른 도구로 옮기기)
 // ---------------------------------------------------------------------------
 export function toCsv(samples: Sample[]): string {
-  const head = ['label', 'src', 'rule', ...Array.from({ length: WINDOW }, (_, k) => [`h${k}`, `e${k}`]).flat()];
+  const head = ['label', 'src', 'rule', ...Array.from({ length: WINDOW }, (_, k) => [`h${k}`, `e${k}`, `g${k}`]).flat()];
   return [head.join(','), ...samples.map((s) => [s.y, s.src, s.rule, ...s.x.map((v) => v.toFixed(2))].join(','))].join('\n');
 }
 

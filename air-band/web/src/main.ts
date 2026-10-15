@@ -17,6 +17,9 @@
 //          화면의 "정면 맞추기" 버튼(또는 키 C)은 보드에 'c' 명령을 보낸다.
 //
 //   녹음: handleHit()을 지나는 모든 타격을 recorder가 쌓는다 → 재생 · MIDI · 공유 링크 (recorder.ts)
+import { mountHeader, attachStick } from './ui/header';
+mountHeader('pads');
+
 import { AirBandConnection, CMD, webBluetoothSupport, type HitEvent } from './ble';
 import { DrumAudio, DRUM_CLASSES } from './audio';
 import { HitVisualizer } from './visual';
@@ -123,7 +126,7 @@ function addLog(e: HitEvent, procMs: number, source: HitSource): void {
   const pad2 = (n: number) => String(n).padStart(2, '0');
   const time = `${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}.${String(now.getMilliseconds()).padStart(3, '0')}`;
   const name = DRUM_CLASSES[e.cls] ?? `class ${e.cls}`;
-  const srcLabel = { sensor: '보드', pad: '화면', test: '테스트', replay: '재생' }[source];
+  const srcLabel = { sensor: conn.isPhone ? '폰' : '보드', pad: '화면', test: '테스트', replay: '재생' }[source];
   li.innerHTML = `
     <span class="t">${time}</span>
     <span class="name">${name}<span class="src">${srcLabel}</span></span>
@@ -184,6 +187,13 @@ connectBtn.addEventListener('click', async () => {
   }
 });
 
+// 폰 단독 모드: 권한 요청이 클릭 안에서 일어나야 하므로 connectPhone()을 await보다 먼저 부른다
+document.getElementById('phone')!.addEventListener('click', () => {
+  const started = conn.isPhone ? (conn.disconnect(), Promise.resolve()) : conn.connectPhone();
+  void audio.resume();
+  started.catch((err) => console.warn('폰 센서 시작 실패', err));
+});
+
 // ---------------------------------------------------------------------------
 // 스틱 방향 (2단계)
 // ---------------------------------------------------------------------------
@@ -193,6 +203,7 @@ function recenter(): void {
   if (statusEl.dataset.state === 'connected') void conn.send(CMD.recenter);
 }
 recenterBtn.addEventListener('click', recenter);
+attachStick(conn, { kind: 'stick', zones: true, autoWizard: false });
 motionToggle.addEventListener('change', () => {
   if (statusEl.dataset.state === 'connected') void conn.send(motionToggle.checked ? CMD.motionOn : CMD.motionOff);
   if (!motionToggle.checked) motion.clear();

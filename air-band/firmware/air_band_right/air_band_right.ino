@@ -48,6 +48,8 @@
 #include <bluefruit.h>
 #include <Wire.h>
 #include "orientation.h"
+#include "ictus.h"
+#include <InternalFileSystem.h>
 
 using airband::Vec3;
 
@@ -57,6 +59,7 @@ using airband::Vec3;
 #define DEBUG_RAW   0   // 1이면 CSV(ax,ay,az,gx,gy,gz)만 출력 (데이터 수집용)
 #define DEBUG_HITS  1   // 1이면 타격 로그 출력 (DEBUG_RAW=1이면 CSV가 섞이지 않도록 자동으로 꺼짐)
 #define DEBUG_ZONE  1   // 1이면 스틱 구역이 바뀔 때 "[ZONE] 하이햇" 출력 (DEBUG_RAW=1이면 꺼짐)
+#define HIT_LED     0   // 1이면 타격마다 LED1을 30ms 켠다 (웹 없이 타격 감지 확인용 디버그. 제품 기능 아님)
 
 // [설명] #define / #if 는 "컴파일 전에" 처리된다.
 //   값이 0이면 해당 코드가 아예 빌드에서 빠지므로, 실행 중 if 문 비용이 없다.
@@ -159,27 +162,42 @@ static const float    VEL_MAX_G       = 12.0f; // 이 크기 이상 → velocity
 #define USE_ZONE_CLASSIFIER 1   // 0이면 1단계처럼 항상 스네어 (TinyML로 바꿀 때도 0에서 시작)
 
 // TinyML (3단계): 웹 tinyml.html에서 내 스윙 데이터로 학습 → zone_model.h 내보내기 → 이 폴더에 넣고 업로드.
-//   zone_model.h가 있으면 구역 규칙 대신 모델이 "타격 직전 0.24초 궤적"을 보고 드럼을 고른다.
+//   zone_model.h가 있으면 구역 규칙 대신 모델이 "타격 직전 0.24초 궤적"(방향 + 가속도 크기)을 보고 드럼을 고른다.
+//   모델이 "노이즈"(걷기 · 스틱 들기 같은 치지 않는 동작)로 판정하면 그 타격은 보내지 않는다.
 //   파일이 없으면 자동으로 규칙 기반으로 동작하므로 1로 둬도 안전하다.
 #define USE_TINYML 1
 #if USE_TINYML && defined(__has_include)
   #if __has_include("zone_model.h")
     #include "zone_model.h"
     #define TINYML_ACTIVE 1
+    // 입력은 25Hz마다 [좌우°, 위아래°, 최대 가속도 g] 3개. 예전(방향만 2개) 모델이면 웹에서 다시 학습 · 내보내기
+    static_assert(ZONE_MODEL_INPUTS == ZONE_MODEL_WINDOW * 3, "zone_model.h가 예전 형식입니다 - tinyml.html에서 다시 내보내세요");
   #endif
 #endif
 #ifndef TINYML_ACTIVE
   #define TINYML_ACTIVE 0
 #endif
+// classifyHit()이 이 값을 돌려주면 "치지 않는 동작"이라 보내지 않는다 (웹 tinyml model.ts NOISE와 같음)
+#ifdef ZONE_MODEL_NOISE
+static const uint8_t CLASS_NOISE = ZONE_MODEL_NOISE;
+#else
+static const uint8_t CLASS_NOISE = 9;
+#endif
 
 // 센서 좌표계에서 스틱 끝을 가리키는 축. 센서를 스틱에 붙인 방향에 맞춰 바꾼다.
 // 예) 칩의 +X 화살표가 스틱 끝을 향하면 {1,0,0}, -Y가 향하면 {0,-1,0}
-// TODO: 확인 필요 — 실제 스틱(또는 가상 IMU)에서 어느 축이 스틱 끝 방향인지.
-//                   틀리게 두면 좌우 판정이 엉뚱하게 나온다 (README "구역 튜닝" 참고).
+// 틀리게 두면 좌우 판정이 엉뚱하게 나온다 (README "구역 튜닝" 참고).
+// 직접 고치지 않아도 된다: 스틱 끝을 천장으로 세우고 'a'(축 맞추기)를 보내면 중력 방향으로 축을 재서
+// 플래시(AXIS_FILE)에 저장하고, 다음 부팅부터 그 값을 쓴다. 이 상수는 저장된 값이 없을 때의 기본값이다.
 static const Vec3  STICK_AXIS     = { 1.0f, 0.0f, 0.0f };
-static const float ZONE_LEFT_DEG  = 25.0f;  // 하이햇 경계. 스네어인데 하이햇이 나오면 ↑
-static const float ZONE_RIGHT_DEG = 25.0f;  // 탐 경계. 스네어인데 탐이 나오면 ↑
-static const float ZONE_UP_DEG    = 25.0f;  // 크래시 경계. 내려칠 때 크래시가 나오면 ↑
+// 2026-10-14: 사용자 실기 "드럼이 한곳에 모여 있어 방향이 잘 안 맞음 · 스틱을 넓게 씀" → 드럼 간격 3단계.
+//   웹이 연결할 때 명령 '1' 좁게 · '2' 보통 · '3' 넓게 를 보낸다 (웹 motion.ts ZONE_PRESETS와 같은 값).
+//   아래는 명령이 오기 전(부팅 직후) 기본값 = 보통.
+static const float ZONE_LEFT_DEG  = 40.0f;  // 하이햇 경계. 스네어인데 하이햇이 나오면 ↑
+static const float ZONE_RIGHT_DEG = 40.0f;  // 탐 경계. 스네어인데 탐이 나오면 ↑
+static const float ZONE_UP_DEG    = 35.0f;  // 크래시 경계. 내려칠 때 크래시가 나오면 ↑
+// 드럼 간격 단계: [좌우°, 위°]
+static const float ZONE_PRESETS[3][2] = { { 25.0f, 25.0f }, { 40.0f, 35.0f }, { 55.0f, 45.0f } };
 
 // 방향 추정 필터 (orientation.h)
 static const float ORIENT_KP      = 1.0f;   // 중력으로 기울기를 바로잡는 세기
@@ -207,8 +225,10 @@ static const uint8_t  MOTION_STREAM_HZ   = 25;
 static const char*   BLE_DEVICE_NAME = "AirBand-R";
 static const uint8_t HAND_RIGHT      = 0;
 static const uint8_t MODE_DRUM       = 0;
+static const uint8_t MODE_CONDUCT    = 1;     // 지휘: 패킷 class 0 = 박, velocity = 박 크기, 시각 = 바닥점
 static const uint8_t HIT_QUEUE_LEN   = 8;     // 전송 대기 큐 길이 (가득 차면 가장 새 이벤트를 버림)
 static const uint8_t PKT_MOTION      = 0x80;  // 모션 패킷 표시 (타격 패킷의 0번 바이트 hand는 0/1)
+static const uint8_t PKT_AXIS        = 0x81;  // 축 맞추기 결과 [1] 1=성공 0=실패 [2..7] 축 x,y,z ×10000 (int16)
 
 // ============================================================================
 // 자료형
@@ -258,7 +278,7 @@ struct SampleBuffer {
 //   [1] zone      : 지금 치면 나올 드럼 클래스
 //   [2..3] heading   : 기준 대비 좌우 각도 × 10 (int16, + = 왼쪽)
 //   [4..5] elevation : 기준 대비 위아래 각도 × 10 (int16, + = 위)
-//   [6..7] |가속도|  : mg 단위 (uint16) — 타격 임계값 튜닝용
+//   [6..7] |가속도|  : 직전 40ms 블록의 최대값, mg 단위 (uint16) — 타격 임계값 튜닝 · TinyML 입력용
 struct HitPacket {
   uint8_t bytes[8];
 };
@@ -279,7 +299,9 @@ static uint32_t     g_nextSampleUs = 0;
 // 스틱 방향 추정 (orientation.h)
 static airband::StickOrientation g_orient;
 static airband::GyroBias         g_gyroBias;
-static const airband::ZoneConfig ZONES = { ZONE_LEFT_DEG, ZONE_RIGHT_DEG, ZONE_UP_DEG };
+static airband::ZoneConfig ZONES = { ZONE_LEFT_DEG, ZONE_RIGHT_DEG, ZONE_UP_DEG };   // 명령 1/2/3으로 바뀜
+static Vec3         g_stickAxis = STICK_AXIS; // 지금 쓰는 스틱 끝 축 (플래시에 저장된 값이 있으면 그것)
+static const char*  AXIS_FILE = "/airband_axis.bin";
 static bool         g_orientReady = false;   // 부팅 보정을 마치고 방향 추정을 시작했는지
 static bool         g_calSteady = false;     // 부팅 보정이 가만히 있는 상태에서 끝났는지 ('?' 상태에 표시)
 static float        g_calSpread = 0.0f;      // 마지막 보정 시도에서 가장 크게 흔들린 축의 (최대-최소) °/s
@@ -294,10 +316,10 @@ static bool         g_hasHit = false;
 static uint32_t     g_ledOffMs = 0;
 
 #if TINYML_ACTIVE
-// 모델 입력용 방향 기록: ZONE_MODEL_HZ(25Hz)마다 [좌우°, 위아래°]를 최근 ZONE_MODEL_WINDOW개만 둔다.
-// 웹(tinyml.html)이 모션 패킷 25Hz로 모은 학습 데이터와 같은 간격이다.
-static float   g_featH[ZONE_MODEL_WINDOW], g_featE[ZONE_MODEL_WINDOW];
-static uint8_t g_featHead = 0, g_featCount = 0, g_featDiv = 0;
+// 모델 입력용 기록: 25Hz 블록마다 [좌우°, 위아래°, 그 40ms 동안 최대 가속도 g]를 최근 ZONE_MODEL_WINDOW개만 둔다.
+// 웹(tinyml.html)이 모션 패킷으로 모은 학습 데이터와 같은 값이다 (모션 패킷도 같은 블록에서 만든다).
+static float   g_featH[ZONE_MODEL_WINDOW], g_featE[ZONE_MODEL_WINDOW], g_featG[ZONE_MODEL_WINDOW];
+static uint8_t g_featHead = 0, g_featCount = 0;
 #endif
 
 // 버튼 디바운스 상태
@@ -307,8 +329,11 @@ static uint32_t     g_btnChangedMs[BUTTON_COUNT] = {};
 static BLEUart       bleuart;
 static QueueHandle_t g_hitQueue = nullptr;
 static QueueHandle_t g_motionQueue = nullptr;   // 1칸: 항상 가장 최근 모션만 (덮어쓰기)
+static volatile uint8_t g_mode = MODE_DRUM;     // 웹이 'k'(지휘) · 'd'(드럼)로 바꾼다. 연결이 끊기면 드럼
+static airband::IctusDetector g_ictus;
 static volatile bool g_streamMotion = false;    // 웹이 'm'으로 켜고 'x'로 끈다. 연결이 끊기면 꺼짐
-static uint8_t       g_motionDiv = 0;
+static uint8_t       g_blockDiv = 0;          // 100Hz 샘플 4개(40ms)마다 한 블록 → 모션 패킷 · 모델 입력 (25Hz)
+static float         g_blockMaxG = 0.0f;      // 이번 블록의 최대 |가속도| (25Hz로 띄엄띄엄 보면 타격 피크를 놓치므로)
 
 // 구역 변경 로그용 (경계에서 왔다 갔다 할 때 줄이 쏟아지지 않도록 0.15초 유지돼야 출력)
 static uint8_t       g_loggedZone = 0xFF, g_pendingZone = 0xFF;
@@ -508,7 +533,7 @@ static const char* drumName(uint8_t cls) {
 // ============================================================================
 // buf      : 타격 직전 0.2초 6축 샘플 (buf.at(0) = 가장 오래된 샘플)
 // peakZone : 피크 순간 스틱이 가리키던 구역 (orientation.h)
-// 반환     : 드럼 클래스
+// 반환     : 드럼 클래스, 또는 CLASS_NOISE(모델이 "치지 않는 동작"으로 판정 → 보내지 않음)
 //
 // 지금은 규칙 기반(방향 구역)이다. Edge Impulse 모델로 바꿀 때는 buf를 모델 입력으로 넣고,
 // 결과를 그대로 돌려주거나 peakZone과 조합하면 된다 (예: 모델은 "치기/긁기" 동작, 구역은 드럼 종류).
@@ -520,8 +545,9 @@ uint8_t classifyHit(const SampleBuffer& buf, uint8_t peakZone) {
     float x[ZONE_MODEL_INPUTS];
     for (uint8_t k = 0; k < ZONE_MODEL_WINDOW; k++) {
       uint8_t i = (g_featHead + k) % ZONE_MODEL_WINDOW;   // 가장 오래된 것부터
-      x[2 * k]     = g_featH[i];
-      x[2 * k + 1] = g_featE[i];
+      x[3 * k]     = g_featH[i];
+      x[3 * k + 1] = g_featE[i];
+      x[3 * k + 2] = g_featG[i];
     }
     return zoneModelPredict(x);
   }
@@ -553,9 +579,9 @@ static uint8_t magnitudeToVelocity(float peakG) {
 // ============================================================================
 // [설명] (uint8_t)(ts >> 8) 은 32비트 정수에서 두 번째 바이트만 떼어내는 비트 연산이다.
 //   예) ts = 0x0001E240 (123456) → bytes[4..7] = 40 E2 01 00
-static void buildPacket(HitPacket& p, uint8_t cls, uint8_t vel, uint32_t ts) {
+static void buildPacket(HitPacket& p, uint8_t cls, uint8_t vel, uint32_t ts, uint8_t mode = MODE_DRUM) {
   p.bytes[0] = HAND_RIGHT;
-  p.bytes[1] = MODE_DRUM;
+  p.bytes[1] = mode;
   p.bytes[2] = cls;
   p.bytes[3] = vel;
   p.bytes[4] = (uint8_t)(ts);          // little-endian
@@ -595,6 +621,7 @@ static void onConnect(uint16_t connHandle) {
 static void onDisconnect(uint16_t connHandle, uint8_t reason) {
   (void)connHandle;
   g_streamMotion = false;   // 다음에 연결한 브라우저가 원할 때 다시 켠다
+  g_mode = MODE_DRUM;
   if (!DEBUG_RAW) {
     Serial.print(F("[BLE] 연결 끊김, reason=0x"));
     Serial.println(reason, HEX);
@@ -631,14 +658,16 @@ static void bleBegin() {
   Bluefruit.Advertising.start(0);               // 0 = 계속 광고
 }
 
-// 타격 이벤트를 전송 큐에 넣고 LED1을 잠깐 켠다 (IMU 타격 / 버튼 공통)
+// 타격 이벤트를 전송 큐에 넣는다 (IMU 타격 / 버튼 공통). HIT_LED 1이면 LED1도 잠깐 켠다
 static void emitHit(uint8_t cls, uint8_t vel, uint32_t ts) {
   HitPacket p;
   buildPacket(p, cls, vel, ts);
   xQueueSend(g_hitQueue, &p, 0);   // 대기 0: 큐가 가득 차도 막히지 않음
 
+#if HIT_LED
   digitalWrite(PIN_STATUS_LED, LED_STATE_ON);
   g_ledOffMs = millis() + 30;
+#endif
 }
 
 // ============================================================================
@@ -665,14 +694,96 @@ static void queueMotion(uint8_t zone, float accMagG) {
   xQueueOverwrite(g_motionQueue, &p);
 }
 
+// 저장된 스틱 축 읽기 (setup에서 IMU 보정 전에). 없거나 이상하면 STICK_AXIS 그대로.
+static void loadStickAxis() {
+  InternalFS.begin();
+  Adafruit_LittleFS_Namespace::File f = InternalFS.open(AXIS_FILE, Adafruit_LittleFS_Namespace::FILE_O_READ);
+  if (!f) return;
+  Vec3 v;
+  bool ok = f.read((uint8_t*)&v, sizeof(v)) == sizeof(v);
+  f.close();
+  float n = sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
+  if (!ok || fabsf(n - 1.0f) > 0.05f) return;
+  g_stickAxis = v;
+  if (!DEBUG_RAW) {
+    Serial.print(F("[AXIS] 저장된 스틱 축 사용 ("));
+    Serial.print(v.x, 2); Serial.print(','); Serial.print(v.y, 2); Serial.print(','); Serial.print(v.z, 2);
+    Serial.println(')');
+  }
+}
+
+static void saveStickAxis() {
+  InternalFS.remove(AXIS_FILE);
+  Adafruit_LittleFS_Namespace::File f = InternalFS.open(AXIS_FILE, Adafruit_LittleFS_Namespace::FILE_O_WRITE);
+  if (!f) return;
+  f.write((const uint8_t*)&g_stickAxis, sizeof(g_stickAxis));
+  f.close();
+}
+
+// [설명] 축 맞추기: 스틱 끝을 천장으로 세우고 가만히 있으면 가속도계에는 중력의 반작용(+1g)이
+//   "센서 기준 위쪽" = 스틱 끝 방향으로 읽힌다. 그래서 직전 0.2초 가속도 평균을 정규화하면 그게 스틱 축이다.
+//   센서를 비스듬히 붙여도 맞는다. 0.2초 동안 흔들렸거나 1g가 아니면 실패로 보고 바꾸지 않는다.
+static void calibrateAxis() {
+  bool ok = false;
+  Vec3 m = { 0, 0, 0 };
+  uint16_t n = g_ring.count;
+  if (n >= RING_SIZE) {
+    for (uint16_t i = 0; i < n; i++) {
+      const Vec3& a = g_ring.at(i).acc;
+      m.x += a.x; m.y += a.y; m.z += a.z;
+    }
+    m = { m.x / n, m.y / n, m.z / n };
+    float maxDev = 0.0f;
+    for (uint16_t i = 0; i < n; i++) {
+      const Vec3& a = g_ring.at(i).acc;
+      float d = sqrtf((a.x - m.x) * (a.x - m.x) + (a.y - m.y) * (a.y - m.y) + (a.z - m.z) * (a.z - m.z));
+      if (d > maxDev) maxDev = d;
+    }
+    float mn = sqrtf(m.x * m.x + m.y * m.y + m.z * m.z);
+    ok = maxDev < 0.15f && fabsf(mn - 1.0f) < 0.15f;
+    if (ok) {
+      g_stickAxis = { m.x / mn, m.y / mn, m.z / mn };
+      g_orient.setAxis(g_stickAxis);
+      saveStickAxis();
+    }
+  }
+  if (!DEBUG_RAW) {
+    if (ok) {
+      Serial.print(F("[AXIS] 스틱 축 저장 ("));
+      Serial.print(g_stickAxis.x, 2); Serial.print(',');
+      Serial.print(g_stickAxis.y, 2); Serial.print(',');
+      Serial.print(g_stickAxis.z, 2);
+      Serial.println(F(") — 이제 스틱을 스네어 쪽으로 겨누고 'c'"));
+    } else {
+      Serial.println(F("[AXIS] 실패 — 스틱 끝을 천장으로 세우고 가만히 든 채 다시 'a'"));
+    }
+  }
+  HitPacket p;
+  p.bytes[0] = PKT_AXIS;
+  p.bytes[1] = ok ? 1 : 0;
+  int16_t v[3] = { (int16_t)lroundf(g_stickAxis.x * 10000.0f), (int16_t)lroundf(g_stickAxis.y * 10000.0f),
+                   (int16_t)lroundf(g_stickAxis.z * 10000.0f) };
+  for (uint8_t k = 0; k < 3; k++) {
+    p.bytes[2 + k * 2] = (uint8_t)v[k];
+    p.bytes[3 + k * 2] = (uint8_t)((uint16_t)v[k] >> 8);
+  }
+  if (g_hitQueue) xQueueSend(g_hitQueue, &p, 0);
+}
+
 static void printStatus() {
   if (DEBUG_RAW) return;
   Serial.print(F("[STATUS] IMU="));     Serial.print(imuName());
   Serial.print(F(" BLE="));             Serial.print(Bluefruit.connected() ? F("연결") : F("대기"));
+  Serial.print(F(" mode="));            Serial.print(g_mode == MODE_CONDUCT ? F("conduct") : F("drum"));
   Serial.print(F(" stream="));          Serial.print(g_streamMotion ? F("on") : F("off"));
   Serial.print(F(" heading="));         Serial.print(g_orient.headingDeg(), 1);
   Serial.print(F(" elev="));            Serial.print(g_orient.elevationDeg(), 1);
   Serial.print(F(" zone="));            Serial.print(drumName(g_orient.zone(ZONES)));
+  Serial.print(F(" zoneDeg="));         Serial.print(ZONES.leftDeg, 0); Serial.print('/'); Serial.print(ZONES.upDeg, 0);
+  Serial.print(F(" axis=("));
+  Serial.print(g_stickAxis.x, 2); Serial.print(',');
+  Serial.print(g_stickAxis.y, 2); Serial.print(',');
+  Serial.print(g_stickAxis.z, 2); Serial.print(')');
   Serial.print(F(" classifier="));      Serial.print(TINYML_ACTIVE ? F("tinyml") : F("rule"));
   if (g_ring.count > 0) {
     const Vec3& a = g_ring.at(g_ring.count - 1).acc;
@@ -689,12 +800,17 @@ static void printStatus() {
   Serial.print(F(" gyroBias=("));
   Serial.print(g_gyroBias.bias.x, 2); Serial.print(',');
   Serial.print(g_gyroBias.bias.y, 2); Serial.print(',');
-  Serial.print(g_gyroBias.bias.z, 2); Serial.println(F(")°/s"));
+  Serial.print(g_gyroBias.bias.z, 2); Serial.print(F(")°/s"));
+  Serial.print(F(" still="));           Serial.print(g_gyroBias.isStill() ? F("yes") : F("no"));
+  Serial.print(F(" biasUpdates="));     Serial.println(g_gyroBias.updates());
 }
 
 // [설명] 명령은 한 글자다. 시리얼 모니터에서 입력해도 되고, 웹이 BLE RX(6e400002)로 보내도 된다.
 //   c : 정면 맞추기 — 지금 스틱 방향을 스네어(기준)로
 //   m : 모션 스트림 켜기 (웹 화면의 실시간 방향 표시)   x : 끄기
+//   k : 지휘 모드 (타격 대신 박을 보냄)   d : 드럼 모드 (기본)
+//   a : 축 맞추기 — 스틱 끝을 천장으로 세운 채 보내면 스틱 축을 다시 잰다 (그다음 c)
+//   1 · 2 · 3 : 드럼 간격 좁게(25°) · 보통(40°) · 넓게(55°)
 //   ? : 상태 한 줄 출력 (시리얼)
 static void handleCommand(int c) {
   switch (c) {
@@ -704,6 +820,15 @@ static void handleCommand(int c) {
       break;
     case 'm': case 'M': g_streamMotion = true;  break;
     case 'x': case 'X': g_streamMotion = false; break;
+    case 'a': case 'A': calibrateAxis();        break;
+    case 'k': case 'K': g_mode = MODE_CONDUCT; g_ictus.reset(); break;
+    case 'd': case 'D': g_mode = MODE_DRUM;     break;
+    case '1': case '2': case '3': {
+      const float* z = ZONE_PRESETS[c - '1'];
+      ZONES = { z[0], z[0], z[1] };
+      if (!DEBUG_RAW) { Serial.print(F("[CMD] 드럼 간격 좌우 ")); Serial.print(z[0], 0); Serial.print(F("° 위 ")); Serial.print(z[1], 0); Serial.println('°'); }
+      break;
+    }
     case '?':           printStatus();          break;
     default: break;     // 줄바꿈 등은 무시
   }
@@ -773,8 +898,8 @@ static void calibrateOrientation() {
       Serial.println(F("°/s) — 다시 잽니다. 센서를 가만히 두세요"));
     }
   }
-  g_gyroBias.seed(meanG);
-  g_orient.begin(STICK_AXIS, ORIENT_KP, ACCEL_TRUST_G);
+  g_gyroBias.seed(meanG, steady);
+  g_orient.begin(g_stickAxis, ORIENT_KP, ACCEL_TRUST_G);
   g_orient.alignToGravity(meanA);
   g_orientReady = true;
   g_calSteady = steady;
@@ -851,6 +976,13 @@ static void detectHit(float m0) {
 
     uint8_t cls = classifyHit(g_ring, g_m1Zone);
     uint8_t vel = magnitudeToVelocity(g_m1);
+    if (cls == CLASS_NOISE) {
+#if HIT_LOG_ENABLED
+      Serial.print(F("NOISE t=")); Serial.print(g_m1Ms);
+      Serial.print(F(" peak="));   Serial.print(g_m1, 2); Serial.println(F("g — 모델이 치지 않는 동작으로 판정, 안 보냄"));
+#endif
+      return;
+    }
 
     emitHit(cls, vel, g_m1Ms);
 
@@ -927,6 +1059,7 @@ void setup() {
   }
 
   if (g_imuType != IMU_NONE) {
+    loadStickAxis();
     if (!DEBUG_RAW) Serial.println(F("[IMU] 자이로 보정 중 — 1초 동안 가만히 두세요"));
     calibrateOrientation();
   }
@@ -944,7 +1077,7 @@ void setup() {
   if (!DEBUG_RAW) {
     Serial.print(F("[BLE] 광고 시작: "));
     Serial.println(BLE_DEVICE_NAME);
-    Serial.println(F("[CMD] c=정면 맞추기  m/x=모션 스트림 켜기/끄기  ?=상태"));
+    Serial.println(F("[CMD] a=축 맞추기(스틱 세우고)  c=정면 맞추기  m/x=모션 스트림 켜기/끄기  k/d=지휘/드럼  ?=상태"));
   }
 
   g_nextSampleUs = micros();
@@ -995,16 +1128,22 @@ void loop() {
   Vec3 gyro = g_gyroBias.correct(s.gyro, s.acc);
   g_orient.update(gyro, s.acc, dt);
   uint8_t zone = g_orient.zone(ZONES);
+  float m0 = sqrtf(s.acc.x * s.acc.x + s.acc.y * s.acc.y + s.acc.z * s.acc.z);
 
+  // 25Hz 블록: 모델 입력과 모션 패킷이 같은 값(방향 + 블록 최대 가속도)을 쓴다 → 웹에서 모은 학습 데이터 = 보드 입력
+  if (m0 > g_blockMaxG) g_blockMaxG = m0;
+  if (++g_blockDiv >= SAMPLE_RATE_HZ / MOTION_STREAM_HZ) {
+    g_blockDiv = 0;
 #if TINYML_ACTIVE
-  if (++g_featDiv >= SAMPLE_RATE_HZ / ZONE_MODEL_HZ) {
-    g_featDiv = 0;
     g_featH[g_featHead] = g_orient.headingDeg();
     g_featE[g_featHead] = g_orient.elevationDeg();
+    g_featG[g_featHead] = g_blockMaxG;
     g_featHead = (g_featHead + 1) % ZONE_MODEL_WINDOW;
     if (g_featCount < ZONE_MODEL_WINDOW) g_featCount++;
-  }
 #endif
+    if (g_streamMotion) queueMotion(zone, g_blockMaxG);
+    g_blockMaxG = 0.0f;
+  }
 
 #if DEBUG_RAW
   // Edge Impulse Data Forwarder 형식: 한 줄에 "ax,ay,az,gx,gy,gz" (g, °/s)
@@ -1016,8 +1155,24 @@ void loop() {
   Serial.println(s.gyro.z, 2);
 #endif
 
-  float m0 = sqrtf(s.acc.x * s.acc.x + s.acc.y * s.acc.y + s.acc.z * s.acc.z);
-  detectHit(m0);
+  if (g_mode == MODE_CONDUCT) {
+    // 지휘 모드: 타격 대신 박. 타격 피크 상태는 계속 갱신만 해 둔다(드럼으로 돌아갈 때 튀지 않게)
+    airband::Ictus b;
+    Vec3 gb = g_orient.gravityBody();
+    float lx = s.acc.x - gb.x, ly = s.acc.y - gb.y, lz = s.acc.z - gb.z;
+    float lin = sqrtf(lx * lx + ly * ly + lz * lz);   // 움직임 가속도 (중력 뺀 값, g)
+    if (g_ictus.update(nowMs, g_orient.elevationDeg(), g_orient.headingDeg(), lin, b)) {
+      long v = lroundf(b.size * 2.0f);
+      HitPacket p;
+      buildPacket(p, 0, (uint8_t)(v < 1 ? 1 : v > 127 ? 127 : v), b.ms, MODE_CONDUCT);
+      xQueueSend(g_hitQueue, &p, 0);
+#if HIT_LOG_ENABLED
+      Serial.print(F("BEAT t=")); Serial.print(b.ms); Serial.print(F(" size=")); Serial.println(b.size, 1);
+#endif
+    }
+  } else {
+    detectHit(m0);
+  }
 
   g_m2 = g_m1;
   g_m1 = m0;
@@ -1028,8 +1183,4 @@ void loop() {
   logZoneChange(zone);
 #endif
 
-  if (g_streamMotion && ++g_motionDiv >= SAMPLE_RATE_HZ / MOTION_STREAM_HZ) {
-    g_motionDiv = 0;
-    queueMotion(zone, m0);
-  }
 }

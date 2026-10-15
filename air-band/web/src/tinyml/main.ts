@@ -8,17 +8,22 @@
 //
 //   샘플 · 모델은 브라우저(localStorage)에 저장해서 새로고침해도 남는다.
 //   학습은 화면이 멈추지 않도록 한 프레임에 몇 epoch씩 나눠서 돌린다.
+import { mountHeader, attachStick, calibrate } from '../ui/header';
+mountHeader('tinyml');
+
 import { AirBandConnection, CMD, webBluetoothSupport, type MotionEvent } from '../ble';
 import { DrumAudio } from '../audio';
 import {
   FEATURE_HZ,
   INPUTS,
+  NOISE,
   STICK_CLASSES,
   WINDOW,
   ZONE,
   Trainer,
   evaluate,
   fromCsv,
+  lastAim,
   predict,
   split,
   synthesize,
@@ -30,11 +35,12 @@ import {
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
-const NAMES: Record<number, string> = { 0: '스네어', 1: '킥', 2: '하이햇', 3: '탐', 4: '크래시' };
-const DIRS: Record<number, string> = { 0: '정면', 2: '왼쪽', 3: '오른쪽', 4: '위로' };
+const NAMES: Record<number, string> = { 0: '스네어', 1: '킥', 2: '하이햇', 3: '탐', 4: '크래시', [NOISE]: '노이즈' };
+const DIRS: Record<number, string> = { 0: '정면', 2: '왼쪽', 3: '오른쪽', 4: '위로', [NOISE]: '치지 않는 동작' };
 const hueOf = (cls: number) => (200 + cls * 70) % 360;
-/** 수집 순서: 하이햇 → 스네어 → 탐 → 크래시 (왼쪽부터) */
-const COLLECT_ORDER = [2, 0, 3, 4];
+/** 수집 순서: 하이햇 → 스네어 → 탐 → 크래시 (왼쪽부터) → 노이즈 */
+const COLLECT_ORDER = [2, 0, 3, 4, NOISE];
+const DRUMS = STICK_CLASSES.filter((c) => c !== NOISE);
 /** 스윙 판정: 직전 창의 가속도 최대가 이 값 미만이면 버튼 입력으로 보고 건너뛴다 */
 const MIN_SWING_G = 1.8;
 const STORE_SAMPLES = 'airband.tinyml.samples';
@@ -43,8 +49,12 @@ const STORE_MODEL = 'airband.tinyml.model';
 const audio = new DrumAudio();
 const conn = new AirBandConnection();
 
-let samples: Sample[] = load<Sample[]>(STORE_SAMPLES, []);
+// 예전 형식(방향만 2값 × 6 = 12개)으로 저장된 샘플 · 모델은 입력 개수가 달라 버린다
+const storedSamples = load<Sample[]>(STORE_SAMPLES, []);
+let samples: Sample[] = storedSamples.filter((s) => s.x.length === INPUTS);
+const droppedOld = storedSamples.length - samples.length;
 let model: Model | null = load<Model | null>(STORE_MODEL, null);
+if (model && model.mean.length !== INPUTS) model = null;
 let lastEval: { valAcc: number; ruleAcc: number; trainN: number } | null = null;
 
 let label = COLLECT_ORDER[0];
@@ -108,8 +118,14 @@ connectBtn.addEventListener('click', async () => {
     console.warn('BLE 연결 실패', err);
   }
 });
-const recenter = () => connected() && void conn.send(CMD.recenter);
+const recenter = () => calibrate('center');
 recenterBtn.addEventListener('click', recenter);
+// 폰 단독 모드 (권한 요청이 클릭 안에서 일어나야 하므로 connectPhone()을 먼저)
+$('phone').addEventListener('click', () => {
+  const started = conn.isPhone ? (conn.disconnect(), Promise.resolve()) : conn.connectPhone();
+  started.catch((err) => console.warn('폰 센서 시작 실패', err));
+});
+attachStick(conn, { kind: 'stick', zones: true, autoWizard: false });
 window.addEventListener('keydown', (ev) => {
   if ((ev.key === 'c' || ev.key === 'C') && !(ev.target instanceof HTMLInputElement)) recenter();
 });
@@ -130,7 +146,7 @@ function windowBefore(t: number): { x: number[]; maxG: number } | null {
   const w = before.slice(-WINDOW);
   const span = w[WINDOW - 1].t - w[0].t;
   if (t - w[WINDOW - 1].t > 120 || span > ((WINDOW - 1) * 1000) / FEATURE_HZ + 120) return null;
-  return { x: w.flatMap((p) => [p.h, p.e]), maxG: Math.max(...w.map((p) => p.g)) };
+  return { x: w.flatMap((p) => [p.h, p.e, p.g]), maxG: Math.max(...w.map((p) => p.g)) };
 }
 
 conn.onHit = (e) => {
@@ -148,12 +164,17 @@ conn.onHit = (e) => {
 
   if (!collecting) return;
   if (!w) return log('방향 데이터가 부족해 건너뜀 (모션 스트림 확인)');
-  if (w.maxG < MIN_SWING_G) return log(`스윙이 약해 건너뜀 (최대 ${w.maxG.toFixed(1)}g) — 보드 버튼이 아니라 스틱으로 쳐 주세요`);
+  // 노이즈는 보드가 타격으로 잡은 것 자체가 정답이라 세기로 거르지 않는다
+  if (label !== NOISE && w.maxG < MIN_SWING_G) return log(`스윙이 약해 건너뜀 (최대 ${w.maxG.toFixed(1)}g) — 보드 버튼이 아니라 스틱으로 쳐 주세요`);
   // rule: 보드가 보낸 판정. 펌웨어가 규칙(classifier=rule)일 때만 "규칙 정확도" 비교가 의미 있다
   samples.push({ x: w.x, y: label, rule: e.cls, src: 'sensor' });
   save(STORE_SAMPLES, samples);
   const ok = e.cls === label;
-  log(`${NAMES[label]} #${countOf(label, 'sensor')} 저장 · 보드 판정 ${NAMES[e.cls] ?? e.cls} ${ok ? '✓' : '✗ (규칙이 틀림 — 모델이 배울 데이터)'}`);
+  log(
+    label === NOISE
+      ? `노이즈 #${countOf(label, 'sensor')} 저장 · 보드는 ${NAMES[e.cls] ?? e.cls}로 잘못 쳤음 → 모델이 걸러 낼 동작`
+      : `${NAMES[label]} #${countOf(label, 'sensor')} 저장 · 보드 판정 ${NAMES[e.cls] ?? e.cls} ${ok ? '✓' : '✗ (규칙이 틀림 — 모델이 배울 데이터)'}`,
+  );
   const target = Number($<HTMLInputElement>('target').value) || 20;
   if ($<HTMLInputElement>('auto').checked && countOf(label, 'sensor') >= target) {
     const next = COLLECT_ORDER.find((c) => countOf(c, 'sensor') < target);
@@ -215,6 +236,8 @@ function renderPrompt(): void {
   if (!connected()) el.innerHTML = '센서를 연결하세요 <small>(보드 없이 해 보려면 아래 "가상 데이터")</small>';
   else if (performance.now() - lastMotionAt > 1500) el.innerHTML = '방향 데이터가 안 옵니다 <small>(IMU 연결 · 모션 스트림 확인)</small>';
   else if (!collecting) el.innerHTML = `준비됨 <small>— 스틱을 스네어 자리에 두고 정면 맞추기(C) → ● 수집 시작</small>`;
+  else if (label === NOISE)
+    el.innerHTML = `치지 <b>않는</b> 동작을 하세요 — 스틱 들고 걷기 · 들어 올리기 · 내려놓기 · 손 흔들기 <small>${n} / ${target} · 보드가 타격으로 잘못 잡은 것만 저장</small>`;
   else el.innerHTML = `${NAMES[label]} 쪽(${DIRS[label]})을 치세요 <small>${n} / ${target}</small>`;
   $('collect-bar').style.width = `${Math.min(1, n / target) * 100}%`;
   renderLabels();
@@ -323,8 +346,7 @@ function drawScatter(): void {
   ctx.textAlign = 'left';
   ctx.fillText('← 왼쪽', 6, Y(0) - 4);
   for (const s of samples) {
-    const hd = s.x[INPUTS - 2];
-    const el = s.x[INPUTS - 1];
+    const { h: hd, e: el } = lastAim(s.x);
     ctx.beginPath();
     ctx.arc(X(hd), Y(el), s.src === 'sensor' ? 4 : 3, 0, Math.PI * 2);
     ctx.fillStyle = `hsla(${hueOf(s.y)}, 80%, ${dark ? 62 : 48}%, ${s.src === 'sensor' ? 0.95 : 0.55})`;
@@ -381,13 +403,15 @@ $('train').addEventListener('click', () => {
   const which = $<HTMLSelectElement>('opt-data').value;
   const data = which === 'all' ? samples : samples.filter((s) => s.src === which);
   const note = $('train-note');
-  const perClass = STICK_CLASSES.map((c) => data.filter((s) => s.y === c).length);
+  const perClass = DRUMS.map((c) => data.filter((s) => s.y === c).length);
   if (Math.min(...perClass) < 5) {
-    note.textContent = `드럼마다 최소 5개는 있어야 합니다 (지금 ${STICK_CLASSES.map((c, i) => `${NAMES[c]} ${perClass[i]}`).join(' · ')}). ② 데이터에서 더 모으세요.`;
+    note.textContent = `드럼마다 최소 5개는 있어야 합니다 (지금 ${DRUMS.map((c, i) => `${NAMES[c]} ${perClass[i]}`).join(' · ')}). ② 데이터에서 더 모으세요.`;
     return;
   }
+  const noiseN = data.filter((s) => s.y === NOISE).length;
   note.textContent =
-    data.length < 80 ? `데이터 ${data.length}개 — 적어서 검증 점수가 들쭉날쭉할 수 있습니다. 드럼마다 20개 이상 권장.` : `데이터 ${data.length}개로 학습합니다.`;
+    (data.length < 80 ? `데이터 ${data.length}개 — 적어서 검증 점수가 들쭉날쭉할 수 있습니다. 드럼마다 20개 이상 권장.` : `데이터 ${data.length}개로 학습합니다.`) +
+    (noiseN < 5 ? ' 노이즈가 거의 없어서 걷거나 손을 흔들 때 나는 소리는 걸러지지 않습니다.' : '');
 
   const { train, val } = split(data, 0.2, 1);
   const trainer = new Trainer(train, { hidden: Number($<HTMLSelectElement>('opt-hidden').value), lr: 0.01, l2: 1e-3, seed: 7 });
@@ -466,6 +490,7 @@ function init(): void {
   renderSummary();
   renderPrompt();
   renderDeploy();
+  if (droppedOld > 0) log(`예전 형식(방향만) 샘플 ${droppedOld}개는 입력이 달라져 쓰지 않습니다. 다시 모아 주세요.`);
   const tab = location.hash.slice(1);
   showTab(['intro', 'data', 'train', 'deploy'].includes(tab) ? tab : 'intro');
   void audio.init();

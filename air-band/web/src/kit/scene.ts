@@ -4,8 +4,8 @@
 //   화면 좌표 = 스틱 각도. 가로는 좌우 각도(heading), 세로는 위아래 각도(elevation)를 그대로 늘린 것이다.
 //   그래서 드럼을 "각도 공간"에 배치하면, 펌웨어의 구역 판정(ZONE_DEG)과 화면 속 드럼 위치가 저절로 맞는다.
 //
-//        위 25° 이상 ──────────  크래시
-//        왼쪽 25° 이상 │ 정면 │ 오른쪽 25° 이상
+//        위 35° 이상 ──────────  크래시
+//        왼쪽 40° 이상 │ 정면 │ 오른쪽 40° 이상
 //           하이햇     │스네어│    탐
 //                       킥 (발 = 버튼 2 / 키 2)
 //
@@ -24,23 +24,23 @@ interface DrumSpot {
   r: number;
   ratio: number;
 }
-// 경계(±25°, 위 25°) 사이에 여백이 생기도록 배치했다. ZONE_DEG를 바꾸면 여기 h·e도 같이 옮길 것
+// 경계(±40°, 위 35°) 사이에 여백이 생기도록 배치했다. ZONE_DEG를 바꾸면 여기 h·e도 같이 옮길 것
 // 위 구역은 좌우 어디든 크래시라서 심벌을 양쪽에 하나씩 두었다 (맞으면 스틱에 가까운 쪽이 흔들림)
 // 배열 순서 = 그리기 순서 (뒤 → 앞)
 const SPOTS: DrumSpot[] = [
-  { id: 'crash-l', cls: CLS.crash, h: 22, e: 40, r: 18, ratio: 0.34 },
-  { id: 'crash-r', cls: CLS.crash, h: -28, e: 37, r: 16, ratio: 0.32 },
-  { id: 'kick', cls: CLS.kick, h: 0, e: -35, r: 18, ratio: 0.97 },
-  { id: 'hihat', cls: CLS.hihat, h: 45, e: 6, r: 13, ratio: 0.3 },
-  { id: 'tom', cls: CLS.tom, h: -45, e: -6, r: 16, ratio: 0.42 },
-  { id: 'snare', cls: CLS.snare, h: 0, e: -2, r: 14, ratio: 0.42 },
+  { id: 'crash-l', cls: CLS.crash, h: 30, e: 52, r: 22, ratio: 0.34 },
+  { id: 'crash-r', cls: CLS.crash, h: -36, e: 49, r: 20, ratio: 0.32 },
+  { id: 'kick', cls: CLS.kick, h: 0, e: -42, r: 22, ratio: 0.97 },
+  { id: 'hihat', cls: CLS.hihat, h: 64, e: 8, r: 17, ratio: 0.3 },
+  { id: 'tom', cls: CLS.tom, h: -64, e: -8, r: 20, ratio: 0.42 },
+  { id: 'snare', cls: CLS.snare, h: 0, e: -2, r: 18, ratio: 0.42 },
 ];
 const spotOf = (id: string) => SPOTS.find((d) => d.id === id)!;
 
 /** 화면에 담을 각도 범위 */
-const VIEW_H = 75; // 좌우 ±
-const VIEW_E_TOP = 62;
-const VIEW_E_BOTTOM = -62;
+const VIEW_H = 95; // 좌우 ±
+const VIEW_E_TOP = 76;
+const VIEW_E_BOTTOM = -74;
 
 const HIT_FX_MS = 900;
 
@@ -302,7 +302,7 @@ export class KitScene {
     ctx.fillStyle = bg;
     ctx.fillRect(-10, -10, w + 20, h + 20);
     // 바닥 러그
-    const floorY = this.Y(-30);
+    const floorY = this.Y(-38);
     ctx.save();
     ctx.translate(w / 2, floorY + (h - floorY) * 0.55);
     ctx.scale(1, 0.32);
@@ -368,7 +368,7 @@ export class KitScene {
   /** 스탠드 (심벌 · 하이햇): 기둥 + 삼발이 */
   private drawStand(x: number, yTop: number): void {
     const { ctx } = this;
-    const yFloor = this.Y(-52);
+    const yFloor = this.Y(-64);
     ctx.strokeStyle = this.chromeStroke(x - 3, x + 3);
     ctx.lineWidth = Math.max(2, this.s * 0.45);
     ctx.beginPath();
@@ -406,7 +406,7 @@ export class KitScene {
     if (!isSnare) {
       ctx.strokeStyle = this.chromeStroke(x - rx, x + rx);
       ctx.lineWidth = Math.max(2, s * 0.4);
-      const yFloor = this.Y(-50);
+      const yFloor = this.Y(-62);
       for (const k of [-0.82, 0.82, 0.25]) {
         ctx.beginPath();
         ctx.moveTo(x + rx * k, y + depth * 0.4);

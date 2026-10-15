@@ -7,8 +7,44 @@
 //   펌웨어 상수(ZONE_LEFT_DEG 등)를 바꾸면 아래 ZONE_DEG도 같이 바꿔야 그림이 맞는다.
 import type { MotionEvent } from './ble';
 
-/** 펌웨어 air_band_right.ino의 ZONE_LEFT_DEG / ZONE_RIGHT_DEG / ZONE_UP_DEG와 맞출 것 */
-export const ZONE_DEG = { left: 25, right: 25, up: 25 };
+/**
+ * 드럼 간격 3단계 — 펌웨어 ZONE_PRESETS와 같은 값. 연결할 때 명령 '1' · '2' · '3'으로 보드에 알린다 (ui/header.ts).
+ * 좌우 이 각도 이상 → 하이햇 / 탐, 위로 이 각도 이상 → 크래시
+ */
+export type ZoneWidth = 1 | 2 | 3;
+export const ZONE_PRESETS: Record<ZoneWidth, { side: number; up: number; label: string }> = {
+  1: { side: 25, up: 25, label: '좁게' },
+  2: { side: 40, up: 35, label: '보통' },
+  3: { side: 55, up: 45, label: '넓게' },
+};
+const ZONE_KEY = 'airband.zoneWidth';
+function loadZoneWidth(): ZoneWidth {
+  try {
+    const v = Number(localStorage.getItem(ZONE_KEY));
+    return v === 1 || v === 2 || v === 3 ? v : 3;
+  } catch {
+    return 3;
+  }
+}
+let zoneWidth: ZoneWidth = loadZoneWidth();
+/** 지금 구역 경계 (도). 값은 setZoneWidth()로만 바뀐다 — 그림 · 폰 모드 · 마우스 판정이 모두 이 객체를 읽는다 */
+export const ZONE_DEG = { left: ZONE_PRESETS[zoneWidth].side, right: ZONE_PRESETS[zoneWidth].side, up: ZONE_PRESETS[zoneWidth].up };
+const zoneListeners: (() => void)[] = [];
+export const getZoneWidth = () => zoneWidth;
+export function setZoneWidth(w: ZoneWidth): void {
+  zoneWidth = w;
+  ZONE_DEG.left = ZONE_DEG.right = ZONE_PRESETS[w].side;
+  ZONE_DEG.up = ZONE_PRESETS[w].up;
+  try {
+    localStorage.setItem(ZONE_KEY, String(w));
+  } catch {
+    // 저장 불가 — 이번 방문만
+  }
+  for (const f of zoneListeners) f();
+}
+export function onZoneChange(f: () => void): void {
+  zoneListeners.push(f);
+}
 /** 펌웨어 HIT_THRESHOLD_G — 가속도 막대에 기준선으로 표시 */
 const HIT_THRESHOLD_G = 2.5;
 const ACCEL_MAX_G = 16;
