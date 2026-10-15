@@ -230,6 +230,48 @@
         text-shadow: 0 0 50px var(--accent);
         z-index: 5;
       }
+      /* 판정 글자: 화면 맨 위 가운데에 크게 (치는 순간마다 다시 튀어나옴) */
+      #judge-big { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 6; pointer-events: none; display: grid; justify-items: center; gap: 2px; text-align: center; white-space: nowrap; }
+      body:not(.playing) #judge-big { display: none; }
+      #jb-text { font-size: clamp(44px, 9vw, 96px); font-weight: 900; letter-spacing: 0.04em; line-height: 1; font-style: italic; opacity: 0; color: #fff; }
+      #jb-sub { font-size: 15px; font-weight: 700; color: rgb(255 255 255 / 0.8); opacity: 0; min-height: 1em; }
+      #jb-combo { font-size: clamp(18px, 3vw, 26px); font-weight: 900; color: #fff; opacity: 0; text-shadow: 0 2px 12px rgb(0 0 0 / 0.6); }
+      #jb-combo small { font-size: 0.55em; letter-spacing: 0.15em; margin-left: 6px; opacity: 0.8; }
+      #judge-big.perfect #jb-text {
+        background: linear-gradient(100deg, #fff6c2 0%, #ffd23f 30%, #fff 45%, #ffb703 60%, #ff7a18 100%);
+        background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+        filter: drop-shadow(0 0 18px rgb(255 190 40 / 0.85)) drop-shadow(0 4px 0 rgb(120 60 0 / 0.6));
+      }
+      #judge-big.great #jb-text { color: #5ad8ff; text-shadow: 0 0 22px rgb(60 190 255 / 0.9), 0 4px 0 rgb(0 60 110 / 0.7); }
+      #judge-big.good #jb-text { color: #6ee7a8; text-shadow: 0 0 16px rgb(60 220 140 / 0.7), 0 4px 0 rgb(0 80 40 / 0.6); }
+      #judge-big.miss #jb-text { color: #ff5a5a; font-size: clamp(36px, 7vw, 72px); text-shadow: 0 0 14px rgb(255 60 60 / 0.6), 0 4px 0 rgb(90 0 0 / 0.6); }
+      #judge-big.go #jb-text { animation: jb-pop 0.75s cubic-bezier(0.2, 1.6, 0.4, 1) forwards; }
+      #judge-big.go.perfect #jb-text { animation: jb-pop 0.75s cubic-bezier(0.2, 1.6, 0.4, 1) forwards, jb-shine 0.75s linear forwards; }
+      #judge-big.go.miss #jb-text { animation: jb-shake 0.6s ease-out forwards; }
+      #judge-big.go #jb-sub { animation: jb-fade 0.75s ease-out forwards; }
+      #judge-big.go #jb-combo { animation: jb-combo 0.75s ease-out forwards; }
+      #judge-big.milestone #jb-combo { color: #ffd23f; font-size: clamp(24px, 4vw, 34px); }
+      @keyframes jb-pop {
+        0% { opacity: 0; transform: scale(2.2); }
+        18% { opacity: 1; transform: scale(0.92); }
+        30% { transform: scale(1.05); }
+        42%, 70% { opacity: 1; transform: scale(1); }
+        100% { opacity: 0; transform: translateY(-14px) scale(1); }
+      }
+      @keyframes jb-shine { from { background-position: 100% 0; } to { background-position: 0% 0; } }
+      @keyframes jb-shake {
+        0% { opacity: 0; transform: translateY(-10px); }
+        12% { opacity: 1; transform: translate(-10px, 0); }
+        24% { transform: translateX(9px); }
+        36% { transform: translateX(-6px); }
+        48% { transform: translateX(3px); }
+        60%, 75% { opacity: 1; transform: translate(0, 0); }
+        100% { opacity: 0; transform: translateY(10px); }
+      }
+      @keyframes jb-fade { 0%, 10% { opacity: 0; } 25%, 70% { opacity: 1; } 100% { opacity: 0; } }
+      @keyframes jb-combo { 0% { opacity: 0; transform: scale(0.6); } 20% { opacity: 1; transform: scale(1.15); } 35%, 75% { opacity: 1; transform: scale(1); } 100% { opacity: 0; } }
+      @media (prefers-reduced-motion: reduce) { #judge-big.go #jb-text, #judge-big.go #jb-combo { animation: jb-fade 0.75s linear forwards; } }
+      /* 판정 글자와 겹치지 않게 점수 · 정확도는 양쪽 끝에 그대로 */
       #yt-box {
         position: absolute;
         right: 12px;
@@ -263,13 +305,14 @@
         .result .grid4 { grid-template-columns: repeat(2, 1fr); }
         .hud .score { font-size: 22px; }
         #yt-box { width: 160px; }
+        #judge-big { top: 64px; }
         /* 폰: 곡 고르는 동안엔 작은 영상이 시작 막대를 가리므로 숨긴다 (영상은 살아 있어야 해서 display 대신 visibility) */
         body:not(.playing):not(.tapping) #yt-box { visibility: hidden; }
         .dock { padding: 10px 12px; }
         #start { padding: 12px 20px; }
       }
     </style>
-    <script type="module" crossorigin src="./assets/rhythm-DLrwmNpL.js"></script>
+    <script type="module" crossorigin src="./assets/rhythm-Clm7-9qH.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/header-Dh3K5oAK.js">
     <link rel="modulepreload" crossorigin href="./assets/audio-Cmd_TyyR.js">
     <link rel="modulepreload" crossorigin href="./assets/view-BQ00PvTK.js">
@@ -291,6 +334,7 @@
         </div>
       </div>
       <div class="count" id="count" hidden></div>
+      <div id="judge-big" aria-live="off"><b id="jb-text"></b><span id="jb-sub"></span><span id="jb-combo"></span></div>
       <div id="yt-box" hidden><div id="yt-player"></div></div>
 
       <!-- 곡 고르기 -->
