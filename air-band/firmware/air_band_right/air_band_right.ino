@@ -140,6 +140,13 @@ static const uint8_t  IMU_BOOT_TRIES     = 3;
 static const uint32_t SAMPLE_RATE_HZ   = 100;
 static const uint32_t SAMPLE_PERIOD_US = 1000000UL / SAMPLE_RATE_HZ;
 static const uint16_t RING_SIZE        = SAMPLE_RATE_HZ / 5;   // 0.2초 = 20샘플
+// [설명] 방향(각도) 적분만 4배 빠르게(400Hz = 2.5ms마다): 센서는 416Hz로 새 값을 내는데 10ms마다 하나만 읽어 곱하면
+//   타격 때 수십 ms 동안 확 꺾이는 회전을 띄엄띄엄 재서 칠 때마다 각도가 조금씩 틀어지고(좌우는 바로잡을 기준이 없어 쌓인다),
+//   2026-10-15 사용자 실기 "칠수록 각도가 안 맞음". 타격 감지 · 링버퍼 · 모션 패킷 등 나머지는 그대로 100Hz.
+static const uint8_t  ORIENT_OVERSAMPLE = 4;
+static const uint32_t FAST_PERIOD_US    = SAMPLE_PERIOD_US / ORIENT_OVERSAMPLE;   // 2500µs
+// 자이로 측정 한계(±2000°/s) 근처면 그 순간 회전을 다 못 잰 것 → 횟수를 세어 '?' 상태에 보인다
+static const float    GYRO_SAT_DPS      = 1950.0f;
 
 // ============================================================================
 // 타격 감지 / 세기 튜닝 상수 (단위: g, 중력 1g 포함한 3축 벡터 크기)
@@ -295,6 +302,9 @@ static float        g_lsbPerDps = 1.0f;
 
 static SampleBuffer g_ring;
 static uint32_t     g_nextSampleUs = 0;
+static uint8_t      g_fastDiv = 0;          // 400Hz 중 몇 번째 (ORIENT_OVERSAMPLE번마다 100Hz 처리)
+static float        g_gyroPeakDps = 0;      // '?' 이후 가장 빠른 회전 (°/s)
+static uint32_t     g_gyroSatCount = 0;     // 자이로 한계 근처였던 샘플 수
 
 // 스틱 방향 추정 (orientation.h)
 static airband::StickOrientation g_orient;
@@ -803,6 +813,11 @@ static void printStatus() {
   Serial.print(g_gyroBias.bias.z, 2); Serial.print(F(")°/s"));
   Serial.print(F(" still="));           Serial.print(g_gyroBias.isStill() ? F("yes") : F("no"));
   Serial.print(F(" biasUpdates="));     Serial.println(g_gyroBias.updates());
+  Serial.print(F("[STATUS] gyroPeak="));   Serial.print(g_gyroPeakDps, 0);
+  Serial.print(F("dps gyroSat="));         Serial.print(g_gyroSatCount);
+  Serial.print(F(" orientHz="));           Serial.println(SAMPLE_RATE_HZ * ORIENT_OVERSAMPLE);
+  g_gyroPeakDps = 0;
+  g_gyroSatCount = 0;
 }
 
 // [설명] 명령은 한 글자다. 시리얼 모니터에서 입력해도 되고, 웹이 BLE RX(6e400002)로 보내도 된다.
@@ -1108,25 +1123,38 @@ void loop() {
     return;
   }
 
-  g_nextSampleUs += SAMPLE_PERIOD_US;
+  g_nextSampleUs += FAST_PERIOD_US;
   // 처리가 한 주기 이상 밀렸으면 누적 지연을 버리고 다시 맞춘다
-  if ((int32_t)(nowUs - g_nextSampleUs) > (int32_t)SAMPLE_PERIOD_US) {
-    g_nextSampleUs = nowUs + SAMPLE_PERIOD_US;
+  if ((int32_t)(nowUs - g_nextSampleUs) > (int32_t)FAST_PERIOD_US) {
+    g_nextSampleUs = nowUs + FAST_PERIOD_US;
   }
 
   ImuSample s;
   if (!imuRead(s)) return;   // IMU 없음(버튼 전용 모드)이면 여기서 끝
-  uint32_t nowMs = millis();
 
-  g_ring.push(s, nowMs);
-
-  // 방향 갱신: 실제로 흐른 시간(dt)으로 적분한다. 밀렸을 때 값이 튀지 않게 범위를 제한.
+  // 방향 갱신 (400Hz): 실제로 흐른 시간(dt)으로 적분한다. 밀렸을 때 값이 튀지 않게 범위를 제한.
   static uint32_t lastUs = nowUs;
   float dt = (nowUs - lastUs) * 1e-6f;
   lastUs = nowUs;
-  if (dt <= 0.0f || dt > 0.05f) dt = SAMPLE_PERIOD_US * 1e-6f;
-  Vec3 gyro = g_gyroBias.correct(s.gyro, s.acc);
+  if (dt <= 0.0f || dt > 0.02f) dt = FAST_PERIOD_US * 1e-6f;
+  const Vec3& bz = g_gyroBias.bias;
+  Vec3 gyro = { s.gyro.x - bz.x, s.gyro.y - bz.y, s.gyro.z - bz.z };
   g_orient.update(gyro, s.acc, dt);
+  float gMax = fmaxf(fabsf(s.gyro.x), fmaxf(fabsf(s.gyro.y), fabsf(s.gyro.z)));
+  if (gMax > g_gyroPeakDps) g_gyroPeakDps = gMax;
+  if (gMax > GYRO_SAT_DPS) g_gyroSatCount++;
+  {
+    // 타격 순간 가속도 최대값은 400Hz 전부에서 (모션 패킷 · TinyML 블록 최대값용)
+    float mf = sqrtf(s.acc.x * s.acc.x + s.acc.y * s.acc.y + s.acc.z * s.acc.z);
+    if (mf > g_blockMaxG) g_blockMaxG = mf;
+  }
+  if (++g_fastDiv < ORIENT_OVERSAMPLE) return;
+  g_fastDiv = 0;
+
+  // ---- 여기부터 100Hz ----
+  uint32_t nowMs = millis();
+  g_ring.push(s, nowMs);
+  g_gyroBias.correct(s.gyro, s.acc);   // 정지 판정 · bias 갱신은 예전처럼 100Hz 묶음(0.5초)으로
   uint8_t zone = g_orient.zone(ZONES);
   float m0 = sqrtf(s.acc.x * s.acc.x + s.acc.y * s.acc.y + s.acc.z * s.acc.z);
 
