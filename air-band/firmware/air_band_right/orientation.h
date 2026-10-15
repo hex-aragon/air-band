@@ -189,13 +189,19 @@ class StickOrientation {
       gz += kp_ * ez;
     }
 
-    // 쿼터니언 적분: q̇ = ½ q ⊗ (0, ω)
-    float h = 0.5f * dt;
+    // 쿼터니언 적분: 이번 dt 동안 ω 축으로 |ω|·dt 만큼 돈 회전을 정확히 곱한다 (q ← q ⊗ Δq).
+    // [설명] 예전 1차 근사(q += ½ q ⊗ ω · dt)는 한 번에 몇 도씩 도는 빠른 스윙(2000°/s × 2.5ms = 5°)에서 조금씩 틀리고,
+    //   그 오차가 타격마다 쌓였다. 정확한 회전은 sin/cos 두 번이면 된다.
+    float wn = sqrtf(gx * gx + gy * gy + gz * gz);
+    float th = 0.5f * wn * dt;
+    float c = cosf(th);
+    float k = wn > 1e-9f ? sinf(th) / wn : 0.5f * dt;
+    float b1 = gx * k, b2 = gy * k, b3 = gz * k;
     float a0 = q0_, a1 = q1_, a2 = q2_, a3 = q3_;
-    q0_ += (-a1 * gx - a2 * gy - a3 * gz) * h;
-    q1_ += ( a0 * gx + a2 * gz - a3 * gy) * h;
-    q2_ += ( a0 * gy - a1 * gz + a3 * gx) * h;
-    q3_ += ( a0 * gz + a1 * gy - a2 * gx) * h;
+    q0_ = a0 * c - a1 * b1 - a2 * b2 - a3 * b3;
+    q1_ = a0 * b1 + a1 * c + a2 * b3 - a3 * b2;
+    q2_ = a0 * b2 - a1 * b3 + a2 * c + a3 * b1;
+    q3_ = a0 * b3 + a1 * b2 - a2 * b1 + a3 * c;
     float n = sqrtf(q0_ * q0_ + q1_ * q1_ + q2_ * q2_ + q3_ * q3_);
     q0_ /= n; q1_ /= n; q2_ /= n; q3_ /= n;
 

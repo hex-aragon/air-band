@@ -214,6 +214,7 @@
       .result .grid4 div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
       .result .grid4 b { display: block; font-size: 24px; font-variant-numeric: tabular-nums; }
       .result .grid4 span { font-size: 12px; color: var(--dim); }
+      .result .actions .video { background: linear-gradient(135deg, #7c5cff, #22c3ff); color: #fff; border: 0; font-weight: 800; }
       .result .calib { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; font-size: 14px; margin-bottom: 16px; text-align: left; }
       .result .actions { display: flex; gap: 10px; }
       .result .actions button { flex: 1; padding: 14px; font-weight: 800; }
@@ -416,6 +417,7 @@
           </div>
           <div class="calib" id="res-calib"></div>
           <div class="actions">
+            <button id="res-video" class="video">🎬 내 연주 영상</button>
             <button id="res-retry" class="primary">↺ 다시 하기</button>
             <button id="res-menu">곡 고르기</button>
           </div>

@@ -40,6 +40,8 @@ import { zoneOfAim } from '../kit/scene';
 import { createKitView } from '../kit/view';
 import { fitTaps, fitKnownTaps, templateChart, LEVEL_NAMES, type BeatGrid, type Level } from './music';
 import { YouTubeTrack, YT_STATE, parseVideoId } from './youtube';
+import { TrailRecorder, type TrailTake } from '../trail/trail';
+import { openStudio } from '../trail/studio';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -168,6 +170,9 @@ let pick: Pick_ = { kind: 'song', song: SONGS[0] };
 let chart: Chart | null = null;
 let game: RhythmGame | null = null;
 let songStart = 0; // 곡의 0ms가 되는 performance.now() 값
+/** 연주 궤적 (결과 화면의 "내 연주 영상") */
+const trail = new TrailRecorder();
+let lastTake: TrailTake | null = null;
 
 interface AudioEvent {
   time: number; // 게임 시각 ms
@@ -347,6 +352,8 @@ function startGame(continueMs?: number): void {
 
 function finishSong(): void {
   if (!game) return;
+  lastTake = trail.finish(titleOf(pick), `${game.rank} · ${game.score.toLocaleString()}점`, performance.now() - songStart);
+  (window as unknown as { __airbandTake?: TrailTake | null }).__airbandTake = lastTake; // 시험 · 디버그용
   stopMedia();
   const key = bestKey(pick);
   const prev = best[key];
@@ -393,6 +400,7 @@ function quitToMenu(): void {
 }
 
 function setState(s: State): void {
+  if (s === 'play' && state !== 'play') trail.start();
   state = s;
   document.body.classList.toggle('playing', s === 'play');
   $('dock').hidden = s !== 'menu';
@@ -426,6 +434,7 @@ function onInput(cls: number, perfTime: number, velocity = INPUT_VELOCITY): void
 
   if (state !== 'play' || !game) return;
   const t = perfTime - songStart - settings.offsetMs;
+  trail.hit(perfTime - songStart, cls, velocity);
   const r = game.hit(cls, t);
   if (r) {
     popups.push({ lane: cls, judgement: r.judgement, at: now, delta: r.delta });
@@ -473,6 +482,7 @@ conn.onHit = (e) => {
   onInput(e.cls, e.boardMs + minOffset, e.velocity);
 };
 conn.onMotion = (m) => {
+  if (state === 'play') trail.motion(m.receivedAt - songStart, m.headingDeg, m.elevationDeg);
   aimCls = m.zone;
   aimAt = m.receivedAt;
   scene.setAim({ h: m.headingDeg, e: m.elevationDeg }, m.zone);
@@ -1207,6 +1217,7 @@ function setupOptions(): void {
 
 function showResult(): void {
   if (!game) return;
+  $('res-video').hidden = !lastTake;
   const rankHue: Record<string, number> = { S: 45, A: 150, B: 200, C: 270, D: 0 };
   $('res-title').textContent = titleOf(pick);
   const rankEl = $('res-rank');
@@ -1284,6 +1295,7 @@ setInterval(renderStickLine, 300);
 
 $('start').addEventListener('click', startSong);
 $('res-retry').addEventListener('click', startSong);
+$('res-video').addEventListener('click', () => lastTake && openStudio(lastTake, audio));
 $('res-menu').addEventListener('click', quitToMenu);
 $('settings-btn').addEventListener('click', () => ($('settings').hidden = !$('settings').hidden));
 document.addEventListener('pointerdown', (ev) => {

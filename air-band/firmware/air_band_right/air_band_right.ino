@@ -140,11 +140,9 @@ static const uint8_t  IMU_BOOT_TRIES     = 3;
 static const uint32_t SAMPLE_RATE_HZ   = 100;
 static const uint32_t SAMPLE_PERIOD_US = 1000000UL / SAMPLE_RATE_HZ;
 static const uint16_t RING_SIZE        = SAMPLE_RATE_HZ / 5;   // 0.2초 = 20샘플
-// [설명] 방향(각도) 적분만 4배 빠르게(400Hz = 2.5ms마다): 센서는 416Hz로 새 값을 내는데 10ms마다 하나만 읽어 곱하면
-//   타격 때 수십 ms 동안 확 꺾이는 회전을 띄엄띄엄 재서 칠 때마다 각도가 조금씩 틀어지고(좌우는 바로잡을 기준이 없어 쌓인다),
-//   2026-10-15 사용자 실기 "칠수록 각도가 안 맞음". 타격 감지 · 링버퍼 · 모션 패킷 등 나머지는 그대로 100Hz.
-static const uint8_t  ORIENT_OVERSAMPLE = 4;
-static const uint32_t FAST_PERIOD_US    = SAMPLE_PERIOD_US / ORIENT_OVERSAMPLE;   // 2500µs
+// [설명] 방향(각도) 적분은 센서 값마다(LSM6DS 416Hz, 그 밖은 400Hz 타이머) — integrateSample() 참고.
+//   타격 감지 · 링버퍼 · 모션 패킷 등 나머지는 그대로 100Hz.
+static const uint32_t FAST_PERIOD_US    = 2500;   // LSM6DS가 아닐 때 읽는 간격 (400Hz)
 // 자이로 측정 한계(±2000°/s) 근처면 그 순간 회전을 다 못 잰 것 → 횟수를 세어 '?' 상태에 보인다
 static const float    GYRO_SAT_DPS      = 1950.0f;
 
@@ -302,9 +300,18 @@ static float        g_lsbPerDps = 1.0f;
 
 static SampleBuffer g_ring;
 static uint32_t     g_nextSampleUs = 0;
-static uint8_t      g_fastDiv = 0;          // 400Hz 중 몇 번째 (ORIENT_OVERSAMPLE번마다 100Hz 처리)
 static float        g_gyroPeakDps = 0;      // '?' 이후 가장 빠른 회전 (°/s)
 static uint32_t     g_gyroSatCount = 0;     // 자이로 한계 근처였던 샘플 수
+// 센서 값마다 방향 적분 (integrateSample)
+static const float LSM_ODR_HZ = 416.0f;
+static float       g_odrPeriodS = 1.0f / LSM_ODR_HZ;   // 센서 값 간격 (재서 맞춘다)
+static ImuSample   g_lastSample;
+static bool        g_haveSample = false;
+static uint32_t    g_nextFastUs = 0;
+static uint32_t    g_lastReadUs = 0;
+static uint32_t    g_odrSamples = 0, g_odrStartUs = 0;
+static uint32_t    g_maxGapUs = 0;        // '?' 이후 센서 읽기 사이 가장 긴 간격 (BLE 등으로 밀렸나)
+static uint32_t    g_missedSamples = 0;   // 못 읽고 지나간 센서 값 개수 (그 자리는 다음 값으로 메움)
 
 // 스틱 방향 추정 (orientation.h)
 static airband::StickOrientation g_orient;
@@ -815,9 +822,13 @@ static void printStatus() {
   Serial.print(F(" biasUpdates="));     Serial.println(g_gyroBias.updates());
   Serial.print(F("[STATUS] gyroPeak="));   Serial.print(g_gyroPeakDps, 0);
   Serial.print(F("dps gyroSat="));         Serial.print(g_gyroSatCount);
-  Serial.print(F(" orientHz="));           Serial.println(SAMPLE_RATE_HZ * ORIENT_OVERSAMPLE);
+  Serial.print(F(" sensorHz="));           Serial.print(g_imuType == IMU_LSM6DS ? 1.0f / g_odrPeriodS : 1e6f / FAST_PERIOD_US, 1);
+  Serial.print(F(" maxGapMs="));           Serial.print(g_maxGapUs / 1000.0f, 1);
+  Serial.print(F(" missed="));             Serial.println(g_missedSamples);
   g_gyroPeakDps = 0;
   g_gyroSatCount = 0;
+  g_maxGapUs = 0;
+  g_missedSamples = 0;
 }
 
 // [설명] 명령은 한 글자다. 시리얼 모니터에서 입력해도 되고, 웹이 BLE RX(6e400002)로 보내도 된다.
@@ -1098,6 +1109,69 @@ void setup() {
   g_nextSampleUs = micros();
 }
 
+// ============================================================================
+// 방향 적분 (센서 값마다)
+// ============================================================================
+// [설명] 타격은 수십 ms 동안 1000°/s 넘게 꺾였다 돌아온다. 이걸 띄엄띄엄(예전 100Hz) 재거나 값을 하나라도 빠뜨리면
+//   "나갈 때 잰 회전 ≠ 돌아올 때 잰 회전"이 되어 칠 때마다 좌우 각도가 조금씩 틀어지고, 좌우는 바로잡을 기준(중력 같은 것)이 없어
+//   계속 쌓인다 (2026-10-15 사용자 실기 "칠수록 각도가 안 맞음"). 그래서
+//   - LSM6DS: STATUS_REG(0x1E)의 GDA 비트로 "새 자이로 값이 나왔나"를 1ms마다 보고, 나올 때마다 읽는다 (416Hz 전부)
+//   - dt는 읽은 시각 차이가 아니라 센서 값 간격(약 2.4ms, 실제 간격을 재서 맞춤) × 지나간 값 개수 → 읽는 시각이 1ms씩 들쭉날쭉해도 정확
+//   - 그 밖의 센서(MPU-6050, 내부 1kHz): 2.5ms 타이머로 읽고 실제 흐른 시간으로 적분
+static bool imuFresh(uint32_t nowUs) {
+  if (g_imuType == IMU_LSM6DS) {
+    uint8_t st = 0;
+    if (i2cReadRegs(g_imuAddr, 0x1E, &st, 1) && (st & 0x02)) return true;   // STATUS_REG bit1 = GDA(새 자이로 값)
+    // 안전장치: 이 칩에서 GDA가 안 켜지면(레지스터가 다른 변종) 10ms마다라도 읽는다 — '?'의 sensorHz가 100 근처면 이 경우
+    return !g_haveSample || (nowUs - g_lastReadUs) > 10000;
+  }
+  if ((int32_t)(nowUs - g_nextFastUs) < 0) return false;
+  g_nextFastUs = nowUs + FAST_PERIOD_US;
+  return true;
+}
+
+static void integrateSample(const ImuSample& s, uint32_t nowUs) {
+  if (!g_haveSample) {
+    g_lastReadUs = g_odrStartUs = nowUs;
+    g_odrSamples = 0;
+  }
+  uint32_t gap = nowUs - g_lastReadUs;
+  g_lastReadUs = nowUs;
+  if (gap > g_maxGapUs) g_maxGapUs = gap;
+  float dt;
+  if (g_imuType == IMU_LSM6DS) {
+    // 지나간 센서 값 개수 (보통 1, 밀렸으면 2 이상)
+    float n = roundf(gap * 1e-6f / g_odrPeriodS);
+    if (n < 1) n = 1;
+    if (n > 8) n = 8;   // 오래 멈췄으면(20ms 넘게) 그 사이 회전은 알 수 없음 — 크게 튀지 않게만
+    if (n > 1) g_missedSamples += (uint32_t)n - 1;
+    dt = g_haveSample ? n * g_odrPeriodS : g_odrPeriodS;
+    // 실제 센서 간격 재기: 2초마다 (흐른 시간 / 값 개수), 정상 범위(±10%)일 때만 천천히 반영
+    g_odrSamples += (uint32_t)n;
+    uint32_t span = nowUs - g_odrStartUs;
+    if (span > 2000000UL) {
+      float per = span * 1e-6f / g_odrSamples;
+      if (fabsf(per * LSM_ODR_HZ - 1.0f) < 0.1f) g_odrPeriodS += 0.2f * (per - g_odrPeriodS);
+      g_odrStartUs = nowUs;
+      g_odrSamples = 0;
+    }
+  } else {
+    dt = gap * 1e-6f;
+    if (!g_haveSample || dt <= 0.0f || dt > 0.02f) dt = FAST_PERIOD_US * 1e-6f;
+  }
+  const Vec3& bz = g_gyroBias.bias;
+  Vec3 gyro = { s.gyro.x - bz.x, s.gyro.y - bz.y, s.gyro.z - bz.z };
+  g_orient.update(gyro, s.acc, dt);
+  float gMax = fmaxf(fabsf(s.gyro.x), fmaxf(fabsf(s.gyro.y), fabsf(s.gyro.z)));
+  if (gMax > g_gyroPeakDps) g_gyroPeakDps = gMax;
+  if (gMax > GYRO_SAT_DPS) g_gyroSatCount++;
+  // 타격 순간 가속도 최대값은 센서 값 전부에서 (모션 패킷 · TinyML 블록 최대값용)
+  float mf = sqrtf(s.acc.x * s.acc.x + s.acc.y * s.acc.y + s.acc.z * s.acc.z);
+  if (mf > g_blockMaxG) g_blockMaxG = mf;
+  g_lastSample = s;
+  g_haveSample = true;
+}
+
 // [설명] loop() 한 바퀴
 //   1) 버튼 읽기 · 명령 읽기 — 매번 (약 1ms마다)
 //   2) 아직 다음 샘플 시각(10ms 간격)이 안 됐으면 → LED 끌 시간인지 확인하고 1ms 쉬고 끝
@@ -1111,45 +1185,32 @@ void loop() {
 #endif
   pollCommands();
   uint32_t nowUs = micros();
-
-  // 주기 유지: 다음 샘플 시각이 안 됐으면 잠깐 양보.
-  // (타이밍 기준은 micros() 비교이고, delay(1)은 CPU를 쉬게 하고 BLE 태스크에 양보하는 용도)
-  if ((int32_t)(nowUs - g_nextSampleUs) < 0) {
-    if (g_ledOffMs && (int32_t)(millis() - g_ledOffMs) >= 0) {
-      digitalWrite(PIN_STATUS_LED, !LED_STATE_ON);
-      g_ledOffMs = 0;
-    }
-    if (g_nextSampleUs - nowUs > 1500) delay(1);
+  if (g_ledOffMs && (int32_t)(millis() - g_ledOffMs) >= 0) {
+    digitalWrite(PIN_STATUS_LED, !LED_STATE_ON);
+    g_ledOffMs = 0;
+  }
+  if (g_imuType == IMU_NONE) {   // 버튼 전용 모드
+    delay(1);
     return;
   }
 
-  g_nextSampleUs += FAST_PERIOD_US;
+  // 1) 새 IMU 값이 나왔으면 바로 읽어 방향을 적분한다 (LSM6DS: 센서가 값을 낼 때마다 = 416Hz, 하나도 안 빠뜨리게)
+  bool fresh = imuFresh(nowUs);
+  if (fresh) {
+    ImuSample s;
+    if (imuRead(s)) integrateSample(s, nowUs);
+  }
+  // 2) 10ms마다 나머지(타격 감지 · 링버퍼 · 모션 패킷)는 가장 최근 값으로
+  if (!g_haveSample || (int32_t)(nowUs - g_nextSampleUs) < 0) {
+    if (!fresh) delay(1);   // CPU를 쉬게 하고 BLE 태스크에 양보 (센서 값 간격 2.4ms보다 짧다)
+    return;
+  }
+  g_nextSampleUs += SAMPLE_PERIOD_US;
   // 처리가 한 주기 이상 밀렸으면 누적 지연을 버리고 다시 맞춘다
-  if ((int32_t)(nowUs - g_nextSampleUs) > (int32_t)FAST_PERIOD_US) {
-    g_nextSampleUs = nowUs + FAST_PERIOD_US;
+  if ((int32_t)(nowUs - g_nextSampleUs) > (int32_t)SAMPLE_PERIOD_US) {
+    g_nextSampleUs = nowUs + SAMPLE_PERIOD_US;
   }
-
-  ImuSample s;
-  if (!imuRead(s)) return;   // IMU 없음(버튼 전용 모드)이면 여기서 끝
-
-  // 방향 갱신 (400Hz): 실제로 흐른 시간(dt)으로 적분한다. 밀렸을 때 값이 튀지 않게 범위를 제한.
-  static uint32_t lastUs = nowUs;
-  float dt = (nowUs - lastUs) * 1e-6f;
-  lastUs = nowUs;
-  if (dt <= 0.0f || dt > 0.02f) dt = FAST_PERIOD_US * 1e-6f;
-  const Vec3& bz = g_gyroBias.bias;
-  Vec3 gyro = { s.gyro.x - bz.x, s.gyro.y - bz.y, s.gyro.z - bz.z };
-  g_orient.update(gyro, s.acc, dt);
-  float gMax = fmaxf(fabsf(s.gyro.x), fmaxf(fabsf(s.gyro.y), fabsf(s.gyro.z)));
-  if (gMax > g_gyroPeakDps) g_gyroPeakDps = gMax;
-  if (gMax > GYRO_SAT_DPS) g_gyroSatCount++;
-  {
-    // 타격 순간 가속도 최대값은 400Hz 전부에서 (모션 패킷 · TinyML 블록 최대값용)
-    float mf = sqrtf(s.acc.x * s.acc.x + s.acc.y * s.acc.y + s.acc.z * s.acc.z);
-    if (mf > g_blockMaxG) g_blockMaxG = mf;
-  }
-  if (++g_fastDiv < ORIENT_OVERSAMPLE) return;
-  g_fastDiv = 0;
+  const ImuSample& s = g_lastSample;
 
   // ---- 여기부터 100Hz ----
   uint32_t nowMs = millis();

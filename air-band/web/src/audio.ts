@@ -64,6 +64,18 @@ export class DrumAudio {
     );
   }
 
+  /** 드럼 소리를 스피커 말고 다른 곳(예: 영상 녹화용 MediaStreamAudioDestinationNode)으로도 보낸다 */
+  connectTap(node: AudioNode): void {
+    this.master.connect(node);
+  }
+  disconnectTap(node: AudioNode): void {
+    try {
+      this.master.disconnect(node);
+    } catch {
+      // 이미 끊김
+    }
+  }
+
   /** 브라우저 자동재생 정책 때문에 사용자 클릭 시 호출해야 한다 */
   // [설명] 브라우저는 사용자가 클릭·키 입력을 하기 전까지 소리를 막아 둔다(자동재생 정책).
   //   그래서 버튼 클릭 등 사용자 동작 안에서 resume()을 불러 오디오 엔진을 깨운다.
