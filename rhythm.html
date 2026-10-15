@@ -141,6 +141,7 @@
       /* 내 노래 */
       .mytrack { display: grid; gap: 10px; margin-top: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px; }
       .mytrack[hidden], .mytrack [hidden] { display: none !important; }
+      .yt-add input { flex: 1; min-width: 0; padding: 12px 14px; font-size: 15px; border-radius: 12px; }
       .mytrack .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
       .mytrack small { color: var(--dim); font-size: 12px; }
       .mytrack a { color: var(--accent2); }
@@ -151,8 +152,8 @@
       .mytrack details[open] > :not(summary) { margin-top: 8px; }
       #track-msg { font-size: 14px; }
       #track-msg:empty { display: none; }
-      #tap { width: 100%; padding: 22px; font-size: 20px; font-weight: 800; touch-action: manipulation; }
-      #tap.flash { animation: tapflash 0.15s; }
+      #yt-tap { width: 100%; padding: 22px; font-size: 20px; font-weight: 800; touch-action: manipulation; }
+      #yt-tap.flash { animation: tapflash 0.15s; }
       @keyframes tapflash { from { background: var(--accent); } }
 
       /* 아래 시작 막대 */
@@ -243,17 +244,32 @@
       }
       #yt-box iframe { width: 100%; height: 100%; border: 0; pointer-events: none; display: block; }
       body.playing #yt-box { bottom: 12px; }
+      /* 박자 탭 중: 영상을 크게 가운데, 아래에 큰 탭 버튼 */
+      #tap-overlay { position: fixed; inset: 0; z-index: 45; background: rgb(5 6 10 / 0.82); backdrop-filter: blur(4px); }
+      #tap-overlay[hidden] { display: none; }
+      body.tapping .dock, body.tapping .settings { display: none; }
+      body.tapping #yt-box { position: fixed; z-index: 46; left: 50%; top: 124px; right: auto; bottom: auto; transform: translateX(-50%); width: min(520px, calc(100vw - 32px)); }
+      .tap-panel { position: absolute; left: 50%; transform: translateX(-50%); top: calc(124px + min(293px, (100vw - 32px) * 0.5625) + 16px); width: min(520px, calc(100vw - 32px)); display: grid; gap: 12px; text-align: center; }
+      .tap-panel h2 { margin: 0; font-size: 20px; }
+      .tap-panel p { margin: 0; color: var(--dim); font-size: 14px; }
+      .tap-dots { display: flex; justify-content: center; gap: 8px; }
+      .tap-dots i { width: 16px; height: 16px; border-radius: 50%; background: #2a2f42; transition: background 0.1s, transform 0.1s; }
+      .tap-dots i.on { background: #34d399; transform: scale(1.15); }
+      #yt-tap { padding: 26px; font-size: 22px; font-weight: 800; border-radius: 16px; touch-action: manipulation; }
+      #tap-cancel { justify-self: center; background: transparent; border: 0; color: var(--dim); }
       @media (max-width: 560px) {
         .grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
         .cover { height: 84px; font-size: 38px; }
         .result .grid4 { grid-template-columns: repeat(2, 1fr); }
         .hud .score { font-size: 22px; }
         #yt-box { width: 160px; }
+        /* 폰: 곡 고르는 동안엔 작은 영상이 시작 막대를 가리므로 숨긴다 (영상은 살아 있어야 해서 display 대신 visibility) */
+        body:not(.playing):not(.tapping) #yt-box { visibility: hidden; }
         .dock { padding: 10px 12px; }
         #start { padding: 12px 20px; }
       }
     </style>
-    <script type="module" crossorigin src="./assets/rhythm-Oi_g6nVO.js"></script>
+    <script type="module" crossorigin src="./assets/rhythm-DLrwmNpL.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/header-Dh3K5oAK.js">
     <link rel="modulepreload" crossorigin href="./assets/audio-Cmd_TyyR.js">
     <link rel="modulepreload" crossorigin href="./assets/view-BQ00PvTK.js">
@@ -288,40 +304,38 @@
             <div class="stick-line" id="stick-line"></div>
           </div>
           <div class="tabs" role="tablist" id="tabs">
-            <button role="tab" data-tab="practice" aria-selected="true">🎯 연습곡</button>
-            <button role="tab" data-tab="pop" aria-selected="false">⭐ 인기곡 (내 MP3)</button>
-            <button role="tab" data-tab="mine" aria-selected="false">🎵 내 노래</button>
+            <button role="tab" data-tab="pop" aria-selected="true">⭐ 인기곡</button>
+            <button role="tab" data-tab="mine" aria-selected="false">🔗 유튜브 링크로</button>
+            <button role="tab" data-tab="practice" aria-selected="false">🎯 연습곡 (음악 없이)</button>
           </div>
           <div class="filters" id="filters"></div>
           <div class="grid" id="songs"></div>
 
           <!-- 내 노래 (main.ts setupTracks) -->
           <div class="mytrack" id="mytrack" hidden>
-            <button id="file-btn" class="primary big">🎵 노래 파일 고르기 (MP3 · M4A · WAV)</button>
-            <small>노래를 듣고 킥 · 스네어 · 하이햇 자리를 찾아 악보를 자동으로 만듭니다. 파일은 이 브라우저 안에서만 쓰고 어디에도 올리지 않습니다.</small>
-            <div id="bpm-fix" class="row" hidden>
-              <small>노트가 노래보다 두 배 빠르거나 느리면</small>
-              <button id="bpm-half">BPM ÷2</button>
-              <button id="bpm-double">BPM ×2</button>
+            <div class="row yt-add">
+              <input type="url" id="yt-url" placeholder="유튜브 링크 붙여넣기 (youtube.com/watch?v=… · youtu.be/…)" />
+              <button id="yt-load" class="primary">＋ 추가</button>
             </div>
-            <details id="yt-more">
-              <summary>파일이 없으면: 유튜브 링크로 (박자를 직접 탭해야 해서 조금 번거로움)</summary>
-              <div class="row">
-                <input type="url" id="yt-url" placeholder="유튜브 링크 붙여넣기" />
-                <button id="yt-load">불러오기</button>
-              </div>
-              <small>예: <a href="#" id="yt-example">Red Hot Chili Peppers — Dani California</a> · 유튜브 소리는 분석할 수 없어서 노트는 박자에 맞춘 기본 패턴입니다. "박자 맞추기"에서 드럼이 시작되면 박마다 스페이스를 16번쯤 치고 Enter.</small>
-              <div id="track-sync" class="row" hidden>
-                <button id="tap-start">▶ 박자 맞추기</button>
-                <button id="tap-refine" hidden>▶ 중간에서 한 번 더 (더 정확)</button>
-                <button id="tap-done" class="primary" hidden>완료 (Enter)</button>
-              </div>
-              <button id="tap" hidden>탭 — 박마다</button>
-            </details>
+            <small>아무 노래나 유튜브 링크를 붙여 넣으면 목록에 생깁니다. ▶ 노래 틀기 → 박마다 스페이스(또는 스틱) 8번 → 바로 게임. 박자는 이 브라우저에 저장돼 다음부터는 바로 시작합니다.</small>
+          </div>
+          <div id="tap-overlay" hidden>
+            <div class="tap-panel">
+              <h2 id="tap-title">노래에 맞춰 탭!</h2>
+              <p id="tap-hint"></p>
+              <div class="tap-dots" id="tap-dots"></div>
+              <button id="yt-tap" class="primary">👏 탭 (스페이스 · 스틱 · 여기)</button>
+              <button id="tap-cancel">취소 (Esc)</button>
+            </div>
+          </div>
+          <div class="mytrack" id="yt-sync" hidden>
+            <div class="row">
+              <button id="yt-resync" hidden>↺ 박자 다시 맞추기</button>
+              <small>노트가 노래와 계속 어긋나면 박자를 다시 맞추세요. 조금씩 밀리는 건 치는 박자를 따라 자동으로 맞춰집니다.</small>
+            </div>
           </div>
           <div id="track-msg" style="margin-top: 12px"></div>
-          <input type="file" id="file" accept="audio/*" hidden />
-        </div>
+                  </div>
       </section>
 
       <!-- 아래 시작 막대 -->
