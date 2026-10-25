@@ -48,8 +48,8 @@
 </head>
 <body>
 <main>
-  <h1>🎃 박수 두 번 → 호박이 사탕을 뱉어요</h1>
-  <p class="st" style="margin:-6px 0 8px">박수 두 번 → 블루투스 → 누코드 NU40 → 블루투스 → 노트북 → USB → 아두이노 UNO → 서보 모터가 호박 입을 열었다가(90°→180°) 바로 닫음. 누코드와 아두이노를 둘 다 연결하세요 (두 보드 사이 선은 필요 없음)</p>
+  <h1>🎃 박수 치면 → 호박이 사탕을 뱉어요</h1>
+  <p class="st" style="margin:-6px 0 8px">박수 → 블루투스 → 누코드 NU40 → 블루투스 → 노트북 → USB → 아두이노 UNO → 서보 모터가 호박 입을 열고(60°→180°) 1.5초 뒤 닫음. 누코드와 아두이노를 둘 다 연결하세요 (두 보드 사이 선은 필요 없음)</p>
 
   <div class="row">
     <button id="camBtn" class="main">① 카메라 켜기</button>
@@ -109,7 +109,11 @@
         <div id="count">사탕 0개</div>
       </div>
       <div class="row">
-        <label>박수 두 번 하면
+        <label>박수
+          <select id="clapNeed">
+            <option value="1" selected>1번</option>
+            <option value="2">2번</option>
+          </select> 치면
           <select id="clapCmd">
             <option value="g">사탕 (아두이노 모터 + 누코드 불 깜빡)</option>
             <option value="b">누코드 불만 깜빡 (모터 없이)</option>
@@ -137,7 +141,7 @@ const $ = (id) => document.getElementById(id);
 const logEl = $('log');
 const log = (s) => { logEl.textContent = `${new Date().toLocaleTimeString()} ${s}\n` + logEl.textContent; };
 
-// 박수 두 번 규칙: 두 박수 사이 0.12~1.5초, 사탕 뒤 4초는 쉼
+// 박수 규칙: 1번 또는 2번(고를 수 있음, 기본 1번). 2번일 때 두 박수 사이 0.12~1.5초. 사탕 뒤 4초는 쉼
 const DOUBLE_MIN_MS = 120, DOUBLE_MAX_MS = 1500, COOLDOWN_MS = 4000, MERGE_MS = 180;
 
 // ================= 보드 연결: 블루투스(NUS) 또는 USB 시리얼 =================
@@ -307,7 +311,8 @@ function onClap(source) {
   const gap = claps.length ? ` · 앞 박수와 ${((now - claps[claps.length - 1]) / 1000).toFixed(2)}초` : '';
   claps.push(now);
   log(`박수 ${claps.length} (${source})${gap}`);
-  if (claps.length >= 2) { claps = []; giveCandy('박수 두 번'); }
+  const need = +$('clapNeed').value;
+  if (claps.length >= need) { claps = []; giveCandy(`박수 ${need}번`); }
 }
 addEventListener('keydown', (e) => {
   if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); onClap('키보드'); }
@@ -316,22 +321,30 @@ addEventListener('keydown', (e) => {
 function updateClapDots() {
   const now = performance.now();
   const live = claps.filter((t) => now - t < DOUBLE_MAX_MS).length;
+  const need = +$('clapNeed').value;
   $('c1').classList.toggle('on', live >= 1);
   $('c2').classList.toggle('on', live >= 2);
+  $('c2').style.display = need >= 2 ? '' : 'none';
   const cooling = now - lastGive < COOLDOWN_MS;
+  if (modelLoading) { $('hint').textContent = `손 인식 모델 내려받는 중… ${((now - modelLoading) / 1000).toFixed(0)}초 (처음엔 20초쯤 걸려요)`; return; }
   $('hint').textContent = cooling ? '🍬 맛있게 드세요!'
-    : live === 1 ? '한 번 더! 👏'
+    : live === 1 && need >= 2 ? '한 번 더! 👏'
     : !video.srcObject && !mic ? '카메라를 켜 주세요'
-    : '박수를 두 번 쳐 보세요 👏👏';
+    : need >= 2 ? '박수를 두 번 쳐 보세요 👏👏' : '박수를 쳐 보세요 👏';
 }
 
 // ================= 카메라: 두 손바닥이 가까워졌다 맞닿는 순간 =================
 const video = $('video'), overlay = $('overlay'), ctx = overlay.getContext('2d');
 let landmarker = null;
 
+let modelLoading = 0;   // 모델 내려받기 시작 시각 (0 = 안 하는 중)
 async function loadModel() {
   if (landmarker) return;
-  $('hint').textContent = '손 인식 모델 불러오는 중…';
+  modelLoading = performance.now();
+  $('camBtn').textContent = '① 카메라 준비 중…';
+  try { await loadModelInner(); } finally { modelLoading = 0; }
+}
+async function loadModelInner() {
   const files = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm');
   const opts = (delegate) => ({
     baseOptions: { modelAssetPath:
@@ -353,7 +366,7 @@ $('camBtn').onclick = async () => {
     $('camBtn').textContent = '① 카메라 켜짐';
     log('카메라 켜짐');
   } catch (e) {
-    video.srcObject = null; $('camBtn').disabled = false;
+    video.srcObject = null; $('camBtn').disabled = false; $('camBtn').textContent = '① 카메라 켜기';
     const busy = /in use|NotReadable/i.test(e.name + e.message);
     const msg = busy ? '카메라를 다른 탭이나 앱(줌, 카메라 앱 등)이 쓰고 있어요. 닫고 다시 눌러 주세요' : '카메라 오류: ' + e.message;
     $('hint').textContent = msg; log(msg);
