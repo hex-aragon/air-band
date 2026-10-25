@@ -47,7 +47,7 @@
 // ============================================================================
 #define DEBUG_RAW   0   // 1이면 CSV(ax,ay,az)만 출력 (2단계 데이터 수집용)
 #define DEBUG_HITS  1   // 1이면 타격 로그 출력 (DEBUG_RAW=1이면 CSV가 섞이지 않도록 자동으로 꺼짐)
-#define DEBUG_IMU   1   // 1이면 1초마다 센서 인식/가속도 확인 (실기 테스트 후 0으로)
+#define DEBUG_IMU   0   // 진단할 때 1로: 1초마다 센서 인식/가속도 확인
 
 // [설명] #define / #if 는 "컴파일 전에" 처리된다.
 //   값이 0이면 해당 코드가 아예 빌드에서 빠지므로, 실행 중 if 문 비용이 없다.
@@ -129,7 +129,7 @@ static const uint16_t RING_SIZE        = SAMPLE_RATE_HZ / 5;   // 0.2초 = 20샘
 //   세 축(x, y, z)의 가속도를 합친 크기 = √(x² + y² + z²). 방향과 상관없이 "얼마나 세게 흔들렸나"를 뜻한다.
 //   스틱을 휘두르다 멈추면 순간적으로 수 g ~ 10g 이상이 나온다. 이 "튀는 점"(피크)을 타격으로 본다.
 static const float    HIT_THRESHOLD_G = 2.5f;  // 이 값 이상인 피크만 타격. 오작동 많으면 ↑, 안 잡히면 ↓
-static const uint32_t REFRACTORY_MS   = 60;    // 타격 후 이 시간 동안은 무시. 한 번에 두 번 잡히면 ↑
+static const uint32_t REFRACTORY_MS   = 150;   // 반동 중복 억제. 이 간격보다 빠른 의도적 연타도 무시됨
 static const float    VEL_MIN_G       = HIT_THRESHOLD_G;  // 이 크기 → velocity 1
 static const float    VEL_MAX_G       = 12.0f; // 이 크기 이상 → velocity 127. 세게 쳐도 작으면 ↓
 
@@ -551,7 +551,7 @@ static void pollButtons() {
 //        └──────────────── 시간 (10ms 간격)
 //
 //   m0가 들어와야 m1이 꼭대기였는지 알 수 있으므로 판정이 10ms 늦다. 대신 세기를 정확히 잰다.
-//   불응기(60ms): 스틱이 튕겨 생기는 두 번째 피크를 또 하나의 타격으로 세지 않게 막는다.
+//   불응기(150ms): 스틱이 튕겨 생기는 두 번째 피크를 또 하나의 타격으로 세지 않게 막는다.
 static void detectHit(float m0) {
   // 시작 직후 또는 읽기 실패 뒤에는 실제 샘플 3개가 모여야 피크를 판정한다.
   if (g_ring.count < 3) return;
