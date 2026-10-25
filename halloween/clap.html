@@ -49,11 +49,12 @@
 <body>
 <main>
   <h1>🎃 박수 두 번 → 호박이 사탕을 뱉어요</h1>
+  <p class="st" style="margin:-6px 0 8px">박수 두 번 → 블루투스 → 누코드 NU40 → 선 → 아두이노 UNO → 서보 모터 → 호박 입</p>
 
   <div class="row">
     <button id="camBtn" class="main">① 카메라 켜기</button>
-    <button id="usbBtn" class="main">② 아두이노 연결 (USB)</button>
-    <button id="btBtn">또는 누코드 연결 (블루투스)</button>
+    <button id="btBtn" class="main">② 누코드 연결 (블루투스)</button>
+    <button id="usbBtn">또는 아두이노 직접 연결 (USB)</button>
     <span class="st">호박: <b id="linkSt">연결 안 됨 (화면에서만 사탕)</b></span>
   </div>
 
@@ -94,8 +95,8 @@
       <div class="row">
         <label>박수 두 번 하면
           <select id="clapCmd">
-            <option value="g">사탕 + 보드 불 깜빡</option>
-            <option value="b">보드 불만 깜빡 (모터 없이)</option>
+            <option value="g">사탕 (아두이노 모터 + 누코드 불 깜빡)</option>
+            <option value="b">누코드 불만 깜빡 (모터 없이)</option>
           </select></label>
       </div>
       <div class="row">
