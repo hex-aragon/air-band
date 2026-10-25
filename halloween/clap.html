@@ -49,12 +49,12 @@
 <body>
 <main>
   <h1>🎃 박수 두 번 → 호박이 사탕을 뱉어요</h1>
-  <p class="st" style="margin:-6px 0 8px">박수 두 번 → 블루투스 → 누코드 NU40 → 선 → 아두이노 UNO → 서보 모터가 호박 입을 열었다가(90°→180°) 바로 닫음</p>
+  <p class="st" style="margin:-6px 0 8px">박수 두 번 → 블루투스 → 누코드 NU40 → 블루투스 → 노트북 → USB → 아두이노 UNO → 서보 모터가 호박 입을 열었다가(90°→180°) 바로 닫음. 누코드와 아두이노를 둘 다 연결하세요 (두 보드 사이 선은 필요 없음)</p>
 
   <div class="row">
     <button id="camBtn" class="main">① 카메라 켜기</button>
     <button id="btBtn" class="main">② 누코드 연결 (블루투스)</button>
-    <button id="usbBtn">또는 아두이노 직접 연결 (USB)</button>
+    <button id="usbBtn" class="main">③ 아두이노 연결 (USB)</button>
     <span class="st">호박: <b id="linkSt">연결 안 됨 (화면에서만 사탕)</b></span>
   </div>
 
@@ -152,6 +152,17 @@ function onLine(link, line) {
   const m = line.match(/name=(\S+)/);
   if (m && link.name !== m[1]) { link.name = m[1]; renderLinks(); }
   log(`${link.name || link.label}: ${line}`);
+  // 누코드가 "-> uno"(아두이노로 보냄)라고 대답하면 노트북이 USB 아두이노에 그 명령을 전달한다 (선 없이)
+  const relay = link.label === '블루투스' && line.match(/-> uno(?: (\S))?$/);
+  if (relay) relayToUno(relay[1] || 'g');
+}
+const usbLinks = () => links.filter((l) => l.label === 'USB');
+const bleLinks = () => links.filter((l) => l.label === '블루투스');
+function relayToUno(cmd) {
+  const usb = usbLinks();
+  if (!usb.length) { log(`(아두이노 USB 연결 안 됨 — 누코드 명령 ${cmd}를 전달 못 함)`); return; }
+  log(`누코드 → 노트북 → 아두이노: ${cmd}`);
+  sendTo(usb, cmd);
 }
 function lineSplitter(link) {
   let buf = '';
@@ -211,11 +222,18 @@ $('usbBtn').onclick = async () => {
   link.send('?');
 };
 
-async function send(cmd) {
-  if (!links.length) { log(`(호박 연결 안 됨) 명령 ${cmd}`); return false; }
-  const results = await Promise.all(links.map((l) => l.send(cmd).then(() => true,
+async function sendTo(targets, cmd) {
+  const results = await Promise.all(targets.map((l) => l.send(cmd).then(() => true,
     (e) => { log(`${l.name || l.label} 보내기 실패: ${e.message}`); return false; })));
   return results.some(Boolean);
+}
+// 누코드(블루투스)가 연결돼 있으면 누코드에게만 보낸다 → 누코드 대답을 받아 아두이노로 전달 (onLine).
+// 누코드가 없으면 아두이노(USB)에 바로 보낸다. 상태(?)는 모두에게.
+async function send(cmd) {
+  if (!links.length) { log(`(호박 연결 안 됨) 명령 ${cmd}`); return false; }
+  if (cmd === '?') return sendTo(links, cmd);
+  const ble = bleLinks();
+  return sendTo(ble.length ? ble : links, cmd);
 }
 document.querySelectorAll('[data-cmd]').forEach((b) => b.onclick = () => send(b.dataset.cmd));
 
