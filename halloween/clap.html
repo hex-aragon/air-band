@@ -87,7 +87,7 @@
       </div>
       <div class="box">
         <h2>박수 디버그 (최근 6초)</h2>
-        <canvas id="dbg" height="140" style="width:100%;height:140px;background:#0c0907;border-radius:8px;display:block"></canvas>
+        <canvas id="clapGraph" height="140" style="width:100%;height:140px;background:#0c0907;border-radius:8px;display:block"></canvas>
         <div class="st" style="font-size:12px;margin-top:4px">
           <span style="color:#ff7a1a">━ 손 사이 거리</span> ·
           <span style="color:#5fd38d">┄ 박수 기준(민감도)</span> ·
@@ -468,7 +468,7 @@ $('saveBtn').onclick = () => {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
 function drawDebug(now) {
-  const cv = $('dbg'), w = cv.clientWidth, h = 140;
+  const cv = $('clapGraph'), w = cv.clientWidth, h = 140;
   if (cv.width !== w) cv.width = w;
   const g = cv.getContext('2d');
   g.clearRect(0, 0, w, h);
