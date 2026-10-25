@@ -52,8 +52,8 @@
 
   <div class="row">
     <button id="camBtn" class="main">① 카메라 켜기</button>
-    <button id="btBtn" class="main">② 호박 연결 (블루투스)</button>
-    <button id="usbBtn">또는 USB로 연결</button>
+    <button id="usbBtn" class="main">② 아두이노 연결 (USB)</button>
+    <button id="btBtn">또는 누코드 연결 (블루투스)</button>
     <span class="st">호박: <b id="linkSt">연결 안 됨 (화면에서만 사탕)</b></span>
   </div>
 
@@ -162,8 +162,8 @@ $('usbBtn').onclick = async () => {
     await port.open({ baudRate: 115200 });
     const writer = port.writable.getWriter();
     sendRaw = (s) => writer.write(new TextEncoder().encode(s));
-    setLink('USB 연결됨', true);
-    log('USB 연결됨');
+    setLink('USB 연결됨 (준비 중…)', true);
+    log('USB 연결됨 — 아두이노 UNO는 연결하면 재시작되므로 2초 기다림');
     (async () => {   // 보드 응답 읽기
       const reader = port.readable.pipeThrough(new TextDecoderStream()).getReader();
       let buf = '';
@@ -178,8 +178,10 @@ $('usbBtn').onclick = async () => {
       } catch { /* 케이블 뽑힘 */ }
       sendRaw = null; setLink('USB 끊김', false);
     })();
+    await new Promise((r) => setTimeout(r, 2000));
+    setLink('USB 연결됨', true);
     send('?');
-  } catch (e) { log('USB 연결 실패: ' + e.message); }
+  } catch (e) { log('USB 연결 실패: ' + e.message + ' (아두이노 IDE 시리얼 모니터가 켜져 있으면 끄세요)'); }
 };
 
 async function send(cmd) {
