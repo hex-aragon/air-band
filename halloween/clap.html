@@ -152,9 +152,6 @@ function onLine(link, line) {
   const m = line.match(/name=(\S+)/);
   if (m && link.name !== m[1]) { link.name = m[1]; renderLinks(); }
   log(`${link.name || link.label}: ${line}`);
-  // 누코드가 "-> uno"(아두이노로 보냄)라고 대답하면 노트북이 USB 아두이노에 그 명령을 전달한다 (선 없이)
-  const relay = link.label === '블루투스' && line.match(/-> uno(?: (\S))?$/);
-  if (relay) relayToUno(relay[1] || 'g');
 }
 const usbLinks = () => links.filter((l) => l.label === 'USB');
 const bleLinks = () => links.filter((l) => l.label === '블루투스');
@@ -184,7 +181,9 @@ $('btBtn').onclick = async () => {
     const tx = await svc.getCharacteristic(NUS_TX);
     await tx.startNotifications();
     const link = { id: ++linkSeq, label: '블루투스', name: device.name, device,
-      send: (s) => rx.writeValue(new TextEncoder().encode(s)) };
+      // 응답 있는 쓰기: 누코드가 받았다고 확인해야 끝난다
+      send: (s) => (rx.writeValueWithResponse ? rx.writeValueWithResponse(new TextEncoder().encode(s))
+                                              : rx.writeValue(new TextEncoder().encode(s))) };
     const dec = new TextDecoder(), feed = lineSplitter(link);   // 응답이 20바이트씩 쪼개져 옴
     tx.addEventListener('characteristicvaluechanged', (e) => feed(dec.decode(e.target.value)));
     device.addEventListener('gattserverdisconnected', () => dropLink(link.id, '블루투스 끊김'));
@@ -227,13 +226,19 @@ async function sendTo(targets, cmd) {
     (e) => { log(`${l.name || l.label} 보내기 실패: ${e.message}`); return false; })));
   return results.some(Boolean);
 }
-// 누코드(블루투스)가 연결돼 있으면 누코드에게만 보낸다 → 누코드 대답을 받아 아두이노로 전달 (onLine).
+// 누코드(블루투스)가 연결돼 있으면 누코드에게 먼저 보낸다. 블루투스 쓰기는 누코드가 받았다고 확인해 줘야 끝나므로,
+// 끝나면(= 누코드가 받음) 모터 명령을 노트북이 USB 아두이노에 전달한다 (두 보드 사이 선 없이).
+// 누코드의 글자 대답은 블루투스에서 잘려 오는 일이 있어서 전달 조건으로 쓰지 않는다.
 // 누코드가 없으면 아두이노(USB)에 바로 보낸다. 상태(?)는 모두에게.
+const MOTOR_CMDS = 'goc+-';
 async function send(cmd) {
   if (!links.length) { log(`(호박 연결 안 됨) 명령 ${cmd}`); return false; }
   if (cmd === '?') return sendTo(links, cmd);
   const ble = bleLinks();
-  return sendTo(ble.length ? ble : links, cmd);
+  if (!ble.length) return sendTo(links, cmd);
+  const got = await sendTo(ble, cmd);
+  if (got && MOTOR_CMDS.includes(cmd)) relayToUno(cmd);
+  return got;
 }
 document.querySelectorAll('[data-cmd]').forEach((b) => b.onclick = () => send(b.dataset.cmd));
 
