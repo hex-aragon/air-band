@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>호박 사탕 머신</title>
+<style>
+  :root { --bg:#14100c; --fg:#fff4e6; --or:#ff7a1a; --dim:#a08670; --ok:#5fd38d; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font-family:system-ui,sans-serif; }
+  main { max-width:640px; margin:0 auto; padding:16px; }
+  h1 { font-size:22px; margin:4px 0 12px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0; align-items:center; }
+  button, select { font:inherit; padding:10px 14px; border-radius:10px; border:1px solid #5a4430;
+    background:#2a1f16; color:var(--fg); }
+  button.main { background:var(--or); border-color:var(--or); color:#1a0e04; font-weight:700; }
+  #stage { position:relative; width:100%; aspect-ratio:3/4; background:#000; border-radius:14px; overflow:hidden; }
+  video, canvas { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+  video.mirror, canvas.mirror { transform:scaleX(-1); }
+  #big { position:absolute; left:0; right:0; bottom:12px; text-align:center; font-size:24px; font-weight:800;
+    text-shadow:0 2px 6px #000; }
+  #bar { position:absolute; left:0; top:0; height:8px; width:0; background:var(--or); transition:width .1s; }
+  #candy { position:absolute; inset:0; display:none; align-items:center; justify-content:center; font-size:96px;
+    background:rgba(255,122,26,.35); }
+  #log { font:12px/1.5 ui-monospace,monospace; color:var(--dim); white-space:pre-wrap; max-height:140px; overflow:auto;
+    background:#0c0907; padding:8px; border-radius:8px; }
+  .st { font-size:14px; color:var(--dim); }
+  .st b.on { color:var(--ok); }
+</style>
+</head>
+<body>
+<main>
+  <h1>🎃 호박 사탕 머신</h1>
+  <div class="row">
+    <button id="btBtn" class="main">① 호박 연결 (블루투스)</button>
+    <span class="st">호박: <b id="btSt">연결 안 됨</b></span>
+  </div>
+  <div class="row">
+    <button id="camBtn" class="main">② 카메라 켜기</button>
+    <button id="flipBtn">앞/뒤 카메라</button>
+  </div>
+  <div class="row">
+    <label class="st">사탕 받는 동작</label>
+    <select id="gesture">
+      <option value="Open_Palm">✋ 손바닥 펴기</option>
+      <option value="Victory">✌️ 브이</option>
+      <option value="Thumb_Up">👍 엄지 척</option>
+      <option value="ILoveYou">🤟 사랑해</option>
+      <option value="Pointing_Up">☝️ 검지 위로</option>
+      <option value="Closed_Fist">✊ 주먹</option>
+    </select>
+    <label class="st">유지 <select id="hold"><option>0.5</option><option selected>1</option><option>2</option></select>초</label>
+  </div>
+
+  <div id="stage">
+    <video id="video" playsinline muted></video>
+    <canvas id="overlay"></canvas>
+    <div id="bar"></div>
+    <div id="big">카메라를 켜 주세요</div>
+    <div id="candy">🍬</div>
+  </div>
+
+  <div class="row">
+    <button id="giveBtn">사탕 주기 (수동)</button>
+    <button data-cmd="o">문 열기</button>
+    <button data-cmd="c">문 닫기</button>
+    <button data-cmd="+">열림 +5°</button>
+    <button data-cmd="-">열림 -5°</button>
+    <button data-cmd="?">상태</button>
+  </div>
+  <div id="log"></div>
+</main>
+
+<script type="module">
+import { GestureRecognizer, FilesetResolver, DrawingUtils }
+  from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs';
+
+const NUS_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const NUS_TX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // 보드 → 웹 (notify)
+const NUS_RX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // 웹 → 보드 (write)
+const COOLDOWN_MS = 4000;
+
+const $ = (id) => document.getElementById(id);
+const video = $('video'), overlay = $('overlay'), ctx = overlay.getContext('2d');
+const logEl = $('log');
+const log = (s) => { logEl.textContent = `${new Date().toLocaleTimeString()} ${s}\n` + logEl.textContent; };
+
+// ---------- 블루투스 (Web Bluetooth: Android/PC Chrome · iPhone은 Bluefy 앱) ----------
+let rx = null;
+$('btBtn').onclick = async () => {
+  if (!navigator.bluetooth) { log('이 브라우저는 Web Bluetooth를 지원하지 않습니다 (Android Chrome / PC Chrome / iPhone Bluefy)'); return; }
+  try {
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: 'Pumpkin' }], optionalServices: [NUS_SERVICE] });
+    device.addEventListener('gattserverdisconnected', () => { rx = null; $('btSt').textContent = '끊김'; $('btSt').className = ''; });
+    const server = await device.gatt.connect();
+    const svc = await server.getPrimaryService(NUS_SERVICE);
+    rx = await svc.getCharacteristic(NUS_RX);
+    const tx = await svc.getCharacteristic(NUS_TX);
+    await tx.startNotifications();
+    const dec = new TextDecoder();
+    tx.addEventListener('characteristicvaluechanged', (e) => log('호박: ' + dec.decode(e.target.value).trim()));
+    $('btSt').textContent = device.name; $('btSt').className = 'on';
+    log('연결됨: ' + device.name);
+    send('?');
+  } catch (e) { log('연결 실패: ' + e.message); }
+};
+
+async function send(cmd) {
+  if (!rx) { log(`(연결 안 됨) 명령 ${cmd}`); return false; }
+  try { await rx.writeValue(new TextEncoder().encode(cmd)); return true; }
+  catch (e) { log('보내기 실패: ' + e.message); return false; }
+}
+document.querySelectorAll('[data-cmd]').forEach((b) => b.onclick = () => send(b.dataset.cmd));
+
+let lastGive = 0;
+function giveCandy(reason) {
+  const now = performance.now();
+  if (now - lastGive < COOLDOWN_MS) return;
+  lastGive = now;
+  log(`사탕! (${reason})`);
+  send('g');
+  $('candy').style.display = 'flex';
+  setTimeout(() => $('candy').style.display = 'none', 1200);
+}
+$('giveBtn').onclick = () => giveCandy('수동');
+
+// ---------- 카메라 + 손 동작 인식 (MediaPipe Gesture Recognizer, 브라우저 안에서 처리) ----------
+let recognizer = null, stream = null, facing = 'user', running = false;
+
+async function loadModel() {
+  if (recognizer) return;
+  $('big').textContent = '동작 인식 모델 불러오는 중…';
+  const files = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm');
+  const opts = (delegate) => ({
+    baseOptions: { modelAssetPath:
+      'https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task',
+      delegate },
+    runningMode: 'VIDEO', numHands: 2 });
+  try { recognizer = await GestureRecognizer.createFromOptions(files, opts('GPU')); }
+  catch { recognizer = await GestureRecognizer.createFromOptions(files, opts('CPU')); }
+}
+
+async function startCamera() {
+  try {
+    await loadModel();
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: 640, height: 480 }, audio: false });
+    video.srcObject = stream;
+    await video.play();
+    const mirror = facing === 'user';
+    video.classList.toggle('mirror', mirror); overlay.classList.toggle('mirror', mirror);
+    if (!running) { running = true; requestAnimationFrame(loop); }
+  } catch (e) { $('big').textContent = '카메라 오류: ' + e.message; log('카메라 오류: ' + e.message); }
+}
+$('camBtn').onclick = startCamera;
+$('flipBtn').onclick = () => { facing = facing === 'user' ? 'environment' : 'user'; startCamera(); };
+
+const NAMES = { Open_Palm:'✋ 손바닥', Victory:'✌️ 브이', Thumb_Up:'👍 엄지 척', Thumb_Down:'👎', ILoveYou:'🤟 사랑해',
+  Pointing_Up:'☝️ 검지', Closed_Fist:'✊ 주먹', None:'' };
+let holdStart = 0, lastVideoTime = -1;
+
+function loop() {
+  if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
+    lastVideoTime = video.currentTime;
+    overlay.width = video.videoWidth; overlay.height = video.videoHeight;
+    const res = recognizer.recognizeForVideo(video, performance.now());
+    ctx.clearRect(0, 0, overlay.width, overlay.height);
+    const draw = new DrawingUtils(ctx);
+    for (const lm of res.landmarks) {
+      draw.drawConnectors(lm, GestureRecognizer.HAND_CONNECTIONS, { color: '#ff7a1a', lineWidth: 3 });
+      draw.drawLandmarks(lm, { color: '#fff4e6', radius: 3 });
+    }
+    const target = $('gesture').value;
+    const holdMs = parseFloat($('hold').value) * 1000;
+    const seen = res.gestures.map((g) => g[0]).filter((g) => g && g.score > 0.6);
+    const hit = seen.some((g) => g.categoryName === target);
+    const now = performance.now();
+    const cooling = now - lastGive < COOLDOWN_MS;
+
+    if (hit && !cooling) {
+      if (!holdStart) holdStart = now;
+      const p = Math.min(1, (now - holdStart) / holdMs);
+      $('bar').style.width = (p * 100) + '%';
+      $('big').textContent = `${NAMES[target]} 유지! ${Math.round(p * 100)}%`;
+      if (p >= 1) { holdStart = 0; giveCandy(NAMES[target]); }
+    } else {
+      holdStart = 0;
+      $('bar').style.width = '0';
+      $('big').textContent = cooling ? '🍬 맛있게 드세요!'
+        : seen.length ? `보이는 동작: ${seen.map((g) => NAMES[g.categoryName] ?? g.categoryName).join(', ')}`
+        : `${NAMES[target]} 하면 사탕이 나와요`;
+    }
+  }
+  requestAnimationFrame(loop);
+}
+</script>
+</body>
+</html>
