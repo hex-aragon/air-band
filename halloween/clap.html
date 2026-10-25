@@ -127,66 +127,94 @@ const DOUBLE_MIN_MS = 120, DOUBLE_MAX_MS = 1200, COOLDOWN_MS = 4000, MERGE_MS = 
 const NUS_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 const NUS_TX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // 보드 → 웹 (notify)
 const NUS_RX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // 웹 → 보드 (write)
-let sendRaw = null;   // (문자열) => Promise
+// 연결된 보드 목록. 아두이노(USB)와 누코드(블루투스)를 같이 연결하면 명령이 둘 다에게 간다.
+// 보드 이름은 '?' 대답의 name= 값으로 알아낸다 (Pumpkin-UNO / Pumpkin-NU40)
+const links = [];   // { id, label, name, send(s) }
+let linkSeq = 0;
 
-function setLink(text, on) { $('linkSt').textContent = text; $('linkSt').className = on ? 'on' : ''; }
+function renderLinks() {
+  const st = $('linkSt');
+  st.textContent = links.length ? links.map((l) => l.name ? `${l.name} (${l.label})` : `${l.label} 준비 중…`).join(' + ')
+    : '연결 안 됨 (화면에서만 사탕)';
+  st.className = links.length ? 'on' : '';
+}
+function addLink(link) { links.push(link); renderLinks(); }
+function dropLink(id, why) {
+  const i = links.findIndex((l) => l.id === id);
+  if (i < 0) return;
+  const [l] = links.splice(i, 1);
+  log(`${l.name || l.label} ${why}`);
+  renderLinks();
+}
+// 보드가 보낸 한 줄: 기록 칸에 쓰고, 이름이 있으면 기억
+function onLine(link, line) {
+  const m = line.match(/name=(\S+)/);
+  if (m && link.name !== m[1]) { link.name = m[1]; renderLinks(); }
+  log(`${link.name || link.label}: ${line}`);
+}
+function lineSplitter(link) {
+  let buf = '';
+  return (text) => {
+    buf += text;
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0) { const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1); if (line) onLine(link, line); }
+  };
+}
 
 $('btBtn').onclick = async () => {
   if (!navigator.bluetooth) { log('이 브라우저는 블루투스 연결이 안 됩니다. 크롬이나 엣지로 열어 주세요'); return; }
   try {
     const device = await navigator.bluetooth.requestDevice({
       filters: [{ namePrefix: 'Pumpkin' }], optionalServices: [NUS_SERVICE] });
-    device.addEventListener('gattserverdisconnected', () => { sendRaw = null; setLink('끊김', false); log('블루투스 끊김'); });
+    if (links.some((l) => l.device === device)) { log(`${device.name}은(는) 이미 연결돼 있어요`); return; }
     const svc = await (await device.gatt.connect()).getPrimaryService(NUS_SERVICE);
     const rx = await svc.getCharacteristic(NUS_RX);
     const tx = await svc.getCharacteristic(NUS_TX);
     await tx.startNotifications();
-    const dec = new TextDecoder();
-    let btBuf = '';
-    tx.addEventListener('characteristicvaluechanged', (e) => {
-      btBuf += dec.decode(e.target.value);
-      let i;
-      while ((i = btBuf.indexOf('\n')) >= 0) { const line = btBuf.slice(0, i).trim(); btBuf = btBuf.slice(i + 1); if (line) log('호박: ' + line); }
-    });
-    sendRaw = (s) => rx.writeValue(new TextEncoder().encode(s));
-    setLink(device.name + ' (블루투스)', true);
+    const link = { id: ++linkSeq, label: '블루투스', name: device.name, device,
+      send: (s) => rx.writeValue(new TextEncoder().encode(s)) };
+    const dec = new TextDecoder(), feed = lineSplitter(link);   // 응답이 20바이트씩 쪼개져 옴
+    tx.addEventListener('characteristicvaluechanged', (e) => feed(dec.decode(e.target.value)));
+    device.addEventListener('gattserverdisconnected', () => dropLink(link.id, '블루투스 끊김'));
+    addLink(link);
     log('연결됨: ' + device.name);
-    send('?');
+    link.send('?');
   } catch (e) { log('블루투스 연결 실패: ' + e.message); }
 };
 
+// 아두이노 보드에 흔한 USB 칩만 목록에 보여서 누코드(USB)를 잘못 고르지 않게 한다
+const ARDUINO_USB = [0x2341, 0x2a03, 0x1a86, 0x0403, 0x10c4].map((usbVendorId) => ({ usbVendorId }));
+
 $('usbBtn').onclick = async () => {
   if (!navigator.serial) { log('이 브라우저는 USB 시리얼이 안 됩니다. 크롬이나 엣지로 열어 주세요'); return; }
+  let port;
+  try { port = await navigator.serial.requestPort({ filters: ARDUINO_USB }); }
+  catch (e) { log('포트를 고르지 않았어요 (목록이 비어 있으면 아두이노 USB 선을 확인)'); return; }
+  if (links.some((l) => l.port === port)) { log('이 아두이노는 이미 연결돼 있어요'); return; }
   try {
-    const port = await navigator.serial.requestPort();
     await port.open({ baudRate: 115200 });
-    const writer = port.writable.getWriter();
-    sendRaw = (s) => writer.write(new TextEncoder().encode(s));
-    setLink('USB 연결됨 (준비 중…)', true);
-    log('USB 연결됨 — 아두이노 UNO는 연결하면 재시작되므로 2초 기다림');
-    (async () => {   // 보드 응답 읽기
-      const reader = port.readable.pipeThrough(new TextDecoderStream()).getReader();
-      let buf = '';
-      try {
-        for (;;) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buf += value;
-          let i;
-          while ((i = buf.indexOf('\n')) >= 0) { const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1); if (line) log('호박: ' + line); }
-        }
-      } catch { /* 케이블 뽑힘 */ }
-      sendRaw = null; setLink('USB 끊김', false);
-    })();
-    await new Promise((r) => setTimeout(r, 2000));
-    setLink('USB 연결됨', true);
-    send('?');
-  } catch (e) { log('USB 연결 실패: ' + e.message + ' (아두이노 IDE 시리얼 모니터가 켜져 있으면 끄세요)'); }
+  } catch (e) { log('USB 연결 실패: ' + e.message + ' — 아두이노 IDE 시리얼 모니터나 다른 탭이 이 포트를 쓰고 있으면 닫아 주세요'); return; }
+  const writer = port.writable.getWriter();
+  const link = { id: ++linkSeq, label: 'USB', name: '', port, send: (s) => writer.write(new TextEncoder().encode(s)) };
+  addLink(link);
+  log('USB 연결됨 — 아두이노 UNO는 연결하면 재시작되므로 2초 기다림');
+  (async () => {   // 보드 응답 읽기
+    const reader = port.readable.pipeThrough(new TextDecoderStream()).getReader();
+    const feed = lineSplitter(link);
+    try {
+      for (;;) { const { value, done } = await reader.read(); if (done) break; feed(value); }
+    } catch { /* 케이블 뽑힘 */ }
+    dropLink(link.id, 'USB 끊김');
+  })();
+  await new Promise((r) => setTimeout(r, 2000));
+  link.send('?');
 };
 
 async function send(cmd) {
-  if (!sendRaw) { log(`(호박 연결 안 됨) 명령 ${cmd}`); return false; }
-  try { await sendRaw(cmd); return true; } catch (e) { log('보내기 실패: ' + e.message); return false; }
+  if (!links.length) { log(`(호박 연결 안 됨) 명령 ${cmd}`); return false; }
+  const results = await Promise.all(links.map((l) => l.send(cmd).then(() => true,
+    (e) => { log(`${l.name || l.label} 보내기 실패: ${e.message}`); return false; })));
+  return results.some(Boolean);
 }
 document.querySelectorAll('[data-cmd]').forEach((b) => b.onclick = () => send(b.dataset.cmd));
 
@@ -276,7 +304,9 @@ $('camBtn').onclick = async () => {
     log('카메라 켜짐');
   } catch (e) {
     video.srcObject = null; $('camBtn').disabled = false;
-    $('hint').textContent = '카메라 오류: ' + e.message; log('카메라 오류: ' + e.message);
+    const busy = /in use|NotReadable/i.test(e.name + e.message);
+    const msg = busy ? '카메라를 다른 탭이나 앱(줌, 카메라 앱 등)이 쓰고 있어요. 닫고 다시 눌러 주세요' : '카메라 오류: ' + e.message;
+    $('hint').textContent = msg; log(msg);
   }
 };
 
