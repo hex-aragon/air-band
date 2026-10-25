@@ -91,7 +91,15 @@
         <div id="count">사탕 0개</div>
       </div>
       <div class="row">
+        <label>박수 두 번 하면
+          <select id="clapCmd">
+            <option value="g">사탕 + 보드 불 깜빡</option>
+            <option value="b">보드 불만 깜빡 (모터 없이)</option>
+          </select></label>
+      </div>
+      <div class="row">
         <button id="giveBtn">사탕 주기 (수동)</button>
+        <button data-cmd="b">불 깜빡</button>
         <button data-cmd="o">문 열기</button>
         <button data-cmd="c">문 닫기</button>
         <button data-cmd="+">열림 +5°</button>
@@ -183,7 +191,7 @@ function giveCandy(reason) {
   candyCount++;
   $('count').textContent = `사탕 ${candyCount}개`;
   log(`사탕! (${reason})`);
-  send('g');
+  send($('clapCmd').value);
   const p = $('pumpkin');
   p.classList.remove('spit'); void p.offsetWidth; p.classList.add('spit');
   const box = $('pumpkinBox');
