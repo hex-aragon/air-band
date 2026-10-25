@@ -47,6 +47,7 @@
 // ============================================================================
 #define DEBUG_RAW   0   // 1이면 CSV(ax,ay,az)만 출력 (2단계 데이터 수집용)
 #define DEBUG_HITS  1   // 1이면 타격 로그 출력 (DEBUG_RAW=1이면 CSV가 섞이지 않도록 자동으로 꺼짐)
+#define DEBUG_IMU   1   // 1이면 1초마다 센서 인식/가속도 확인 (실기 테스트 후 0으로)
 
 // [설명] #define / #if 는 "컴파일 전에" 처리된다.
 //   값이 0이면 해당 코드가 아예 빌드에서 빠지므로, 실행 중 if 문 비용이 없다.
@@ -78,10 +79,10 @@ static const uint8_t  PIN_STATUS_LED = LED_BUILTIN;
 // ============================================================================
 // IMU 설정
 // ============================================================================
-// 사용할 IMU 모델이 정해지지 않았으므로, 흔한 6축 IMU 두 계열을 WHO_AM_I로 자동 감지한다.
+// NU40 DK + 누코드 LSM6DS3TR 계열 센서. 기존 MPU/LSM6 호환성도 유지한다.
 //   - MPU-6050 / MPU-6500 계열 (I2C 0x68 / 0x69)
 //   - ST LSM6DS3 / LSM6DSL / LSM6DSO 계열 (I2C 0x6A / 0x6B)
-// TODO: 확인 필요 — 실제 사용할 IMU 모델과 I2C 주소(AD0/SA0 핀 상태).
+// TODO: 확인 필요 — 실제 모듈의 I2C 주소(AD0/SA0 핀 상태).
 //                   위 두 계열이 아니면 imuBegin()/imuReadAccel()에 드라이버를 추가할 것.
 //                   부팅 시 시리얼에 I2C 스캔 결과가 출력되니 그 주소를 참고.
 
@@ -314,9 +315,17 @@ static bool beginLsm6ds(uint8_t addr) {
   if (!i2cReadRegs(addr, 0x0F, &who, 1)) return false;
   if (who != 0x69 && who != 0x6A && who != 0x6C) return false;
   // CTRL3_C: BDU=1(읽는 도중 값 갱신 방지), IF_INC=1(주소 자동 증가)
-  i2cWriteReg(addr, 0x12, 0x44);
+  if (!i2cWriteReg(addr, 0x12, 0x44)) return false;
   // CTRL1_XL: ODR 416Hz, FS ±16g (0.488 mg/LSB)
-  i2cWriteReg(addr, 0x10, 0x64);
+  if (!i2cWriteReg(addr, 0x10, 0x64)) return false;
+  // ACK만으로 성공 처리하지 않는다. 범위 설정 실패 시 세기 계산이 틀어질 수 있다.
+  uint8_t ctrl1, ctrl3;
+  if (!i2cReadRegs(addr, 0x10, &ctrl1, 1) || ctrl1 != 0x64) return false;
+  if (!i2cReadRegs(addr, 0x12, &ctrl3, 1) || ctrl3 != 0x44) return false;
+  if (!DEBUG_RAW) {
+    Serial.print(F("[IMU] LSM6 WHO_AM_I=0x")); Serial.print(who, HEX);
+    Serial.println(F(" accel=416Hz range=16g BDU=on"));
+  }
   g_lsbPerG = 1000.0f / 0.488f;
   return true;
 }
@@ -327,7 +336,7 @@ static bool imuBegin() {
   for (uint8_t a : mpuAddrs) {
     if (beginMpu6050(a)) { g_imuType = IMU_MPU6050; g_imuAddr = a; return true; }
   }
-  const uint8_t lsmAddrs[] = { 0x6A, 0x6B };
+  const uint8_t lsmAddrs[] = { 0x6B, 0x6A }; // 보드의 기존 0x6A 장치와 충돌하지 않는 주소 우선
   for (uint8_t a : lsmAddrs) {
     if (beginLsm6ds(a)) { g_imuType = IMU_LSM6DS; g_imuAddr = a; return true; }
   }
@@ -347,13 +356,17 @@ static bool imuReadAccel(AccelSample& out) {
       y = (int16_t)((b[2] << 8) | b[3]);
       z = (int16_t)((b[4] << 8) | b[5]);
       break;
-    case IMU_LSM6DS:
+    case IMU_LSM6DS: {
+      // STATUS_REG.XLDA: 새 가속도 값이 준비된 경우에만 읽는다.
+      uint8_t status;
+      if (!i2cReadRegs(g_imuAddr, 0x1E, &status, 1) || !(status & 0x01)) return false;
       // OUTX_L_XL(0x28)부터 6바이트, little-endian
       if (!i2cReadRegs(g_imuAddr, 0x28, b, 6)) return false;
       x = (int16_t)((b[1] << 8) | b[0]);
       y = (int16_t)((b[3] << 8) | b[2]);
       z = (int16_t)((b[5] << 8) | b[4]);
       break;
+    }
     default:
       return false;
   }
@@ -540,6 +553,8 @@ static void pollButtons() {
 //   m0가 들어와야 m1이 꼭대기였는지 알 수 있으므로 판정이 10ms 늦다. 대신 세기를 정확히 잰다.
 //   불응기(60ms): 스틱이 튕겨 생기는 두 번째 피크를 또 하나의 타격으로 세지 않게 막는다.
 static void detectHit(float m0) {
+  // 시작 직후 또는 읽기 실패 뒤에는 실제 샘플 3개가 모여야 피크를 판정한다.
+  if (g_ring.count < 3) return;
   bool isPeak = (g_m1 >= HIT_THRESHOLD_G) && (g_m1 > g_m2) && (g_m1 >= m0);
   bool refractoryOver = !g_hasHit || (g_m1Ms - g_lastHitMs >= REFRACTORY_MS);
 
@@ -663,8 +678,32 @@ void loop() {
   }
 
   AccelSample s;
-  if (!imuReadAccel(s)) return;   // IMU 없음(버튼 전용 모드)이면 여기서 끝
+  bool sampleReady = imuReadAccel(s);
   uint32_t nowMs = millis();
+
+#if DEBUG_IMU && !DEBUG_RAW
+  static uint32_t lastReportMs = 0;
+  if (nowMs - lastReportMs >= 1000) {
+    lastReportMs = nowMs;
+    if (sampleReady) {
+      Serial.print(F("[IMU] ax=")); Serial.print(s.x, 3);
+      Serial.print(F(" ay=")); Serial.print(s.y, 3);
+      Serial.print(F(" az=")); Serial.print(s.z, 3);
+      Serial.println(F(" g"));
+    } else if (g_imuType == IMU_NONE) {
+      Serial.println(F("[IMU] 없음: 전원/배선/SA0 확인 후 보드를 리셋하세요"));
+    } else {
+      Serial.println(F("[IMU] 새 샘플 없음: 지속되면 배선/전원 확인 후 리셋하세요"));
+    }
+  }
+#endif
+
+  if (!sampleReady) {
+    // 끊기기 전 피크와 복구 후 값을 이어 붙여 가짜 타격을 만들지 않는다.
+    g_ring.head = g_ring.count = 0;
+    g_m1 = g_m2 = 0.0f;
+    return;
+  }
 
   g_ring.push(s, nowMs);
 

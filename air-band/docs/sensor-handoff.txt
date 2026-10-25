@@ -1,0 +1,67 @@
+NU40 DK / LSM6DS3TR 센서 연결 작업 인수인계
+
+목표
+NU40 DK와 누코드 LSM6DS3TR 계열 센서로 실제 타격을 감지하여,
+BLE로 브라우저에 전달하고 드럼 소리가 나는 것까지 검증한다.
+사용자는 하드웨어 초보이므로 물리적 조작은 한 번에 하나씩 안내한다.
+
+현재 상태
+- 원본에도 가속도 읽기, 100Hz 샘플링, 피크 감지, BLE 전송이 있었다.
+- 이번 수정: LSM6 설정 쓰기/읽기 검증, 새 샘플 확인, 시작/읽기 실패 후
+  잘못된 피크 판정 방지, 1초 간격 DEBUG_IMU 진단 로그.
+- BLE 이름 AirBand-R, NUS 서비스, 8바이트 패킷 및 웹 코드는 유지했다.
+- 센서 타격은 스네어(class=0) 한 종류이고 세기에 따라 음량이 달라진다.
+- NUBoards nRF52 1.0.2, FQBN nucode:nrf52:nu40dk로 펌웨어 빌드 성공.
+  Flash 135364 bytes, 전역 RAM 16172 bytes.
+- 웹 TypeScript 검사 및 Vite production build 성공.
+- 실제 업로드, 시리얼 센서 데이터, BLE 수신, 실제 타격 소리는 미검증.
+  빌드 성공을 실기 테스트 성공으로 보고하지 말 것.
+
+이전 PC에서의 장애
+- 현재 포트로는 블루투스 가상 COM 포트만 보였다. 이 포트에 업로드하지 않았다.
+- Windows 과거 장치 기록에는 NU40 USB VID 239A / PID 80AC,
+  USB 직렬 장치 COM7이 있었다. 실제로 연결됐다가 분리된 기록이다.
+- 새 PC에서는 실제 포트 번호를 다시 조회한다. COM7로 고정하지 않는다.
+- 원인은 확정하지 못했다. LED 색만으로 고장이나 충전 전용 케이블이라고 단정하지 않는다.
+- 사용자가 제공한 사진은 USB-C 단자가 아래, NU40 금속 모듈이 위인 방향이다.
+  RESET은 금속 모듈 아래 오른쪽, 검은 Cortex 커넥터 바로 위의 단독 버튼이다.
+  네 개의 일반 버튼 또는 빨간 불 바로 위 버튼과 혼동하지 않는다.
+- 센서는 진단 과정에서 분리했을 수 있으므로 현재 연결 상태를 확인한다.
+
+다른 PC에서 진행할 일 (경로는 저장소 루트 기준)
+1. USB 보드의 현재 포트를 확인한다. 필요하면 올바른 RESET 버튼을
+   약 500ms 이내에 두 번 눌러 부트로더 모드에 진입한다.
+2. 공식 Arduino 보드 관리자 URL을 사용한다:
+   https://raw.githubusercontent.com/Nucode01/Adafruit_nRF52_Arduino/refs/heads/master/package_nuduino_index.json
+   패키지 nucode:nrf52@1.0.2, 보드 nucode:nrf52:nu40dk.
+   Bluefruit/Wire는 BSP에 포함되어 있다.
+3. air-band/firmware/air_band_right/air_band_right.ino를 빌드/업로드한다.
+   CLI 예시 (arduino-cli 설치 경로와 실제 포트는 이 PC에서 확인):
+   arduino-cli compile --fqbn nucode:nrf52:nu40dk air-band/firmware/air_band_right
+   arduino-cli upload --fqbn nucode:nrf52:nu40dk --port <실제포트> air-band/firmware/air_band_right
+   전체 칩 erase나 부트로더 교체를 첫 해결책으로 사용하지 않는다.
+4. 시리얼 모니터 115200 baud에서 I2C scan, WHO_AM_I, 가속도 값을 확인한다.
+   기본 Wire: SDA=P0.26, SCL=P0.27. 배선 변경 전에는 전원을 끈다.
+   센서의 정확한 -C 접미사, 주소, 커넥터 배선은 실물/로그로 확인한다.
+   원본 README의 '0x6A 전원 장치'는 원본 작성자 환경의 기록이므로
+   현재 보드에서도 동일하다고 단정하지 말고 확인한다.
+   WHO_AM_I 값과 I2C 주소는 서로 다르다. 주소 충돌이 확인되면
+   실제 모듈의 공식 SA0 설정 방법에 따라 0x6B 사용을 검토한다.
+5. DEBUG_IMU=1이면 ax/ay/az 또는 읽기 상태가 1초마다 출력된다.
+   정지 시 합성 가속도 약 1g, 움직일 때 값 변화, 타격 시 HIT 로그를 확인한다.
+   시작 시 IMU가 없으면 버튼 모드로 동작하므로 연결을 고친 뒤 재시작한다.
+6. cd air-band/web → npm ci → npm run build → npm run dev.
+   Chrome/Edge에서 이 PC의 localhost 주소를 연다.
+   패드/키 1~4 또는 스페이스로 소리를 먼저 확인한다.
+   '센서 연결' → AirBand-R → notify 구독을 완료한다.
+   OS 페어링만으로 웹 연결이 끝난 것은 아니다.
+7. 센서를 실제로 휘둘러 시리얼 HIT, 웹의 '보드' 출처 로그, 화면 효과,
+   소리가 함께 나오는지 확인한다. 사용자에게 실제 청음 결과도 확인한다.
+   약한/강한 타격, 정지, 단발, 연타를 비교한다.
+   기본 HIT_THRESHOLD_G=2.5, REFRACTORY_MS=60, VEL_MAX_G=12.0.
+   실기 결과에 따라 조정하고, 확인이 끝나면 DEBUG_IMU=0으로 로그를 끌 수 있다.
+
+참고
+air-band/README.md
+https://nucode.gitbook.io/nuseries/dks/nu-40-dk
+https://www.st.com/resource/en/datasheet/lsm6ds3tr-c.pdf
