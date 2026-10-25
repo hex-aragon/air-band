@@ -75,7 +75,8 @@
         <div class="row">
           <label style="width:110px">손 사이 거리</label>
           <div class="meter"><i id="handBar"></i><s id="handMark"></s></div>
-          <label>민감도 <input type="range" id="camSens" min="0.6" max="1.6" step="0.05" value="1.0"></label>
+          <label>민감도 <input type="range" id="camSens" min="0.8" max="2.2" step="0.05" value="1.4"></label>
+          <label id="handNum" style="width:120px">손 0개</label>
         </div>
         <div class="row">
           <label style="width:110px">소리 크기</label>
@@ -119,8 +120,8 @@ const $ = (id) => document.getElementById(id);
 const logEl = $('log');
 const log = (s) => { logEl.textContent = `${new Date().toLocaleTimeString()} ${s}\n` + logEl.textContent; };
 
-// 박수 두 번 규칙: 두 박수 사이 0.15~1.2초, 사탕 뒤 4초는 쉼
-const DOUBLE_MIN_MS = 150, DOUBLE_MAX_MS = 1200, COOLDOWN_MS = 4000, MERGE_MS = 180;
+// 박수 두 번 규칙: 두 박수 사이 0.12~1.2초, 사탕 뒤 4초는 쉼
+const DOUBLE_MIN_MS = 120, DOUBLE_MAX_MS = 1200, COOLDOWN_MS = 4000, MERGE_MS = 180;
 
 // ================= 보드 연결: 블루투스(NUS) 또는 USB 시리얼 =================
 const NUS_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
@@ -141,7 +142,12 @@ $('btBtn').onclick = async () => {
     const tx = await svc.getCharacteristic(NUS_TX);
     await tx.startNotifications();
     const dec = new TextDecoder();
-    tx.addEventListener('characteristicvaluechanged', (e) => log('호박: ' + dec.decode(e.target.value).trim()));
+    let btBuf = '';
+    tx.addEventListener('characteristicvaluechanged', (e) => {
+      btBuf += dec.decode(e.target.value);
+      let i;
+      while ((i = btBuf.indexOf('\n')) >= 0) { const line = btBuf.slice(0, i).trim(); btBuf = btBuf.slice(i + 1); if (line) log('호박: ' + line); }
+    });
     sendRaw = (s) => rx.writeValue(new TextEncoder().encode(s));
     setLink(device.name + ' (블루투스)', true);
     log('연결됨: ' + device.name);
@@ -258,12 +264,18 @@ async function loadModel() {
 }
 
 $('camBtn').onclick = async () => {
+  if (video.srcObject || $('camBtn').disabled) return;
+  $('camBtn').disabled = true;
   try {
     await loadModel();
     video.srcObject = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
     await video.play();
+    $('camBtn').textContent = '① 카메라 켜짐';
     log('카메라 켜짐');
-  } catch (e) { $('hint').textContent = '카메라 오류: ' + e.message; log('카메라 오류: ' + e.message); }
+  } catch (e) {
+    video.srcObject = null; $('camBtn').disabled = false;
+    $('hint').textContent = '카메라 오류: ' + e.message; log('카메라 오류: ' + e.message);
+  }
 };
 
 // 손바닥 가운데(손목 + 손가락 뿌리 4개 평균)와 손 크기(손목~가운뎃손가락 뿌리)
@@ -275,10 +287,36 @@ function palm(lm) {
   return { x, y, size };
 }
 
-// 거리 = 두 손바닥 사이 / 손 크기. 벌림(OPEN 이상) → 맞닿음(민감도 이하) = 박수 1번.
-// 손이 겹치면 인식기가 한 손을 놓치는 일이 많아서, 다가오다가 한 손이 사라져도 박수로 센다.
-const OPEN = 1.9;
-let armed = false, lastDist = Infinity, lastTwoAt = -1e9, prevDist = Infinity, lastVideoTime = -1;
+// 박수 판정. 거리 = 두 손바닥 사이 / 손 크기.
+// ① 두 손이 다 보이는 채로 거리가 민감도 아래로 내려가면 박수
+// ② 빠르게 치면 손이 겹치거나 흐려져서 인식기가 한 손(또는 두 손)을 놓친다.
+//    두 손이 다가오던 중(거리가 줄던 중) 0.3초 안에 손이 사라지면 그것도 박수로 센다.
+// 다시 세려면 두 손이 (민감도 + 0.5) 넘게 벌어져야 한다.
+class ClapDetector {
+  constructor() { this.armed = true; this.last2 = null; }
+  // t: ms, palms: [{x, y, size}, ...], close: 민감도 → 박수면 true
+  step(t, palms, close) {
+    const rearm = close + 0.5;
+    if (palms.length >= 2) {
+      const [a, b] = palms;
+      const d = Math.hypot(a.x - b.x, a.y - b.y) / ((a.size + b.size) / 2);
+      const prev = this.last2 && t - this.last2.t < 300 ? this.last2.d : Infinity;
+      this.last2 = { t, d, closing: d < prev - 0.05 };
+      if (d > rearm) this.armed = true;
+      if (this.armed && d < close) { this.armed = false; return true; }
+      return false;
+    }
+    const l = this.last2;
+    if (this.armed && l && t - l.t < 300 && l.d < close + 1.8 && (l.closing || l.d < rearm)) {
+      this.armed = false; this.last2 = null; return true;
+    }
+    return false;
+  }
+  get distance() { return this.last2 ? this.last2.d : null; }
+}
+window.ClapDetector = ClapDetector;   // 시험용
+const clapDet = new ClapDetector();
+let lastVideoTime = -1;
 
 function camStep(now) {
   if (!landmarker || video.readyState < 2 || video.currentTime === lastVideoTime) return;
@@ -295,20 +333,11 @@ function camStep(now) {
   $('handMark').style.left = `${(close / 3) * 100}%`;
   if (!$('useCam').checked) return;
 
-  if (res.landmarks.length >= 2) {
-    const a = palm(res.landmarks[0]), b = palm(res.landmarks[1]);
-    const d = Math.hypot(a.x - b.x, a.y - b.y) / ((a.size + b.size) / 2);
-    $('handBar').style.width = `${Math.min(1, d / 3) * 100}%`;
-    if (d > OPEN) armed = true;
-    if (armed && d < close) { armed = false; onClap('카메라'); }
-    prevDist = lastDist; lastDist = d; lastTwoAt = now;
-  } else {
-    // 두 손이 다가오던 중 한 손이 사라짐 = 겹친 것으로 봄
-    const approaching = lastDist < prevDist && lastDist < OPEN * 0.85;
-    if (armed && approaching && now - lastTwoAt < 250) { armed = false; onClap('카메라'); }
-    if (now - lastTwoAt > 250) $('handBar').style.width = '0';
-    lastDist = Infinity; prevDist = Infinity;
-  }
+  const palms = res.landmarks.map(palm);
+  if (clapDet.step(now, palms, close)) onClap('카메라');
+  const d = palms.length >= 2 ? clapDet.distance : null;
+  $('handBar').style.width = d == null ? '0' : `${Math.min(1, d / 3) * 100}%`;
+  $('handNum').textContent = `손 ${palms.length}개` + (d == null ? '' : ` · 거리 ${d.toFixed(1)}`);
 }
 
 // ================= 소리: 짧고 큰 소리(짝!) =================
