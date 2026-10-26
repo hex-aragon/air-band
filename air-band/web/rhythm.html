@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Air Band 리듬 게임</title>
+    <style>
+      /* 리듬 게임은 항상 어두운 무대 (게임 화면 느낌) */
+      :root {
+        --bg: #0a0b10;
+        --panel: #141722;
+        --panel2: #1b1f2d;
+        --text: #eef0f6;
+        --dim: #8f97aa;
+        --line: #252a3b;
+        --accent: #7c5cff;
+        --accent2: #22c3ff;
+        --ok: #34d399;
+        --warn: #fbbf24;
+        --warn-bg: #3a2c0a;
+        --scrim: rgb(8 9 14 / 0.9);
+        color-scheme: dark;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font: 15px/1.45 system-ui, -apple-system, 'Segoe UI', 'Noto Sans KR', sans-serif;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      button {
+        font: inherit;
+        padding: 8px 14px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: var(--panel2);
+        color: var(--text);
+        cursor: pointer;
+      }
+      button:hover:not(:disabled) { border-color: #3a4160; }
+      button.primary { background: linear-gradient(135deg, var(--accent), #5b8cff); border-color: transparent; color: #fff; font-weight: 700; }
+      button:disabled { opacity: 0.45; cursor: default; }
+
+      #stage { flex: 1; position: relative; min-height: 0; overflow: hidden; background: #07080b; }
+      #game, #kit { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+      .hud {
+        position: absolute;
+        top: 14px;
+        left: 16px;
+        right: 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        pointer-events: none;
+        font-variant-numeric: tabular-nums;
+        z-index: 4;
+      }
+      .hud .score { font-size: 30px; font-weight: 900; letter-spacing: -0.02em; text-shadow: 0 0 12px #000; }
+      .hud .label { font-size: 12px; color: #aab1c3; }
+      .hud .right { text-align: right; }
+      .progress { position: absolute; left: 0; right: 0; top: 0; height: 4px; background: #1a1d28; z-index: 4; }
+      .progress span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+
+      /* 메뉴 · 결과 */
+      .overlay {
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(1200px 500px at 50% -10%, rgb(124 92 255 / 0.22), transparent 60%), var(--scrim);
+        overflow-y: auto;
+        padding: 22px 16px 120px;
+        z-index: 6;
+        backdrop-filter: blur(3px);
+      }
+      .overlay .inner { max-width: 980px; margin: 0 auto; }
+      .menu-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+      .menu-head h2 { font-size: 26px; margin: 0; letter-spacing: -0.02em; }
+      .menu-head p { margin: 2px 0 0; color: var(--dim); font-size: 14px; }
+      .stick-line { font-size: 13px; color: var(--dim); background: var(--panel); border: 1px solid var(--line); padding: 7px 12px; border-radius: 999px; }
+      .stick-line b { color: var(--text); }
+
+      .tabs { display: flex; gap: 6px; margin-bottom: 10px; overflow-x: auto; scrollbar-width: none; }
+      .tabs button { border-radius: 999px; padding: 9px 16px; font-weight: 700; white-space: nowrap; background: transparent; }
+      .tabs button[aria-selected='true'] { background: #fff; color: #0a0b10; border-color: #fff; }
+      .filters { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+      .filters button { padding: 5px 12px; font-size: 13px; border-radius: 999px; }
+      .filters button[aria-pressed='true'] { background: #23273a; border-color: #4a5275; }
+
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
+      .card {
+        --h: 260;
+        position: relative;
+        text-align: left;
+        padding: 0;
+        border-radius: 16px;
+        border: 2px solid transparent;
+        background: var(--panel);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        transition: transform 0.12s, border-color 0.12s, box-shadow 0.12s;
+      }
+      .card:hover { transform: translateY(-3px); border-color: #3a4160; }
+      .card[aria-pressed='true'] { border-color: hsl(var(--h) 90% 65%); box-shadow: 0 0 0 4px hsl(var(--h) 90% 60% / 0.18), 0 14px 40px rgb(0 0 0 / 0.5); }
+      .cover {
+        height: 112px;
+        width: 100%;
+        align-self: stretch;
+        display: grid;
+        place-items: center;
+        font-size: 50px;
+        background:
+          radial-gradient(circle at 30% 20%, hsl(calc(var(--h) + 40) 95% 65% / 0.9), transparent 55%),
+          linear-gradient(135deg, hsl(var(--h) 80% 45%), hsl(calc(var(--h) + 60) 85% 30%));
+        position: relative;
+      }
+      .cover .lv {
+        position: absolute;
+        left: 10px;
+        top: 10px;
+        font-size: 11px;
+        font-weight: 800;
+        padding: 3px 8px;
+        border-radius: 999px;
+        background: rgb(0 0 0 / 0.45);
+        color: #fff;
+        letter-spacing: 0.02em;
+      }
+      .cover .rank { position: absolute; right: 10px; top: 8px; font-size: 22px; font-weight: 900; color: #fff; text-shadow: 0 2px 8px rgb(0 0 0 / 0.6); }
+      .cover .need { position: absolute; right: 10px; bottom: 8px; font-size: 11px; padding: 3px 8px; border-radius: 999px; background: rgb(0 0 0 / 0.5); color: #fff; }
+      .card .body { padding: 10px 12px 12px; display: grid; gap: 2px; }
+      .card .t { font-weight: 800; font-size: 15px; line-height: 1.3; }
+      .card .a { color: var(--dim); font-size: 13px; }
+      .card .d { color: #aab1c3; font-size: 12px; margin-top: 4px; }
+      .card .del { position: absolute; right: 8px; bottom: 8px; color: var(--dim); font-size: 13px; padding: 2px 7px; border-radius: 6px; }
+      .card .del:hover { color: #fff; background: #2a2f42; }
+      .empty { grid-column: 1 / -1; color: var(--dim); text-align: center; padding: 20px; }
+
+      /* 내 노래 */
+      .mytrack { display: grid; gap: 10px; margin-top: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px; }
+      .mytrack[hidden], .mytrack [hidden] { display: none !important; }
+      .yt-add input { flex: 1; min-width: 0; padding: 12px 14px; font-size: 15px; border-radius: 12px; }
+      .mytrack .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .mytrack small { color: var(--dim); font-size: 12px; }
+      .mytrack a { color: var(--accent2); }
+      .mytrack input[type='url'] { flex: 1; min-width: 180px; font: inherit; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: #0d0f16; color: var(--text); }
+      .mytrack .big { width: 100%; padding: 15px; font-size: 16px; font-weight: 800; }
+      .mytrack details { border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 8px; }
+      .mytrack summary { cursor: pointer; color: var(--dim); font-size: 13px; }
+      .mytrack details[open] > :not(summary) { margin-top: 8px; }
+      #track-msg { font-size: 14px; }
+      #track-msg:empty { display: none; }
+      #yt-tap { width: 100%; padding: 22px; font-size: 20px; font-weight: 800; touch-action: manipulation; }
+      #yt-tap.flash { animation: tapflash 0.15s; }
+      @keyframes tapflash { from { background: var(--accent); } }
+
+      /* 아래 시작 막대 */
+      .dock {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 7;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 16px;
+        background: rgb(13 15 22 / 0.92);
+        border-top: 1px solid var(--line);
+        backdrop-filter: blur(10px);
+        flex-wrap: wrap;
+      }
+      .dock[hidden] { display: none; }
+      .dock .sel { flex: 1; min-width: 160px; display: grid; }
+      .dock .sel b { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .dock .sel small { color: var(--dim); font-size: 12px; }
+      .seg { display: flex; gap: 4px; flex-wrap: wrap; }
+      .seg[hidden] { display: none; }
+      .seg button { padding: 7px 11px; font-size: 13px; }
+      .seg button[aria-pressed='true'] { background: linear-gradient(135deg, var(--accent), #5b8cff); border-color: transparent; color: #fff; font-weight: 700; }
+      #start { padding: 13px 28px; font-size: 17px; border-radius: 12px; box-shadow: 0 6px 24px rgb(124 92 255 / 0.45); }
+
+      /* 설정 */
+      .settings {
+        position: absolute;
+        right: 16px;
+        bottom: 76px;
+        z-index: 8;
+        width: min(420px, calc(100% - 32px));
+        background: #141722;
+        border: 1px solid #2c3247;
+        border-radius: 16px;
+        padding: 14px 16px;
+        box-shadow: 0 20px 60px rgb(0 0 0 / 0.6);
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 10px 12px;
+        align-items: center;
+        font-size: 14px;
+      }
+      .settings[hidden] { display: none; }
+      .settings h3 { grid-column: 1 / -1; margin: 0; font-size: 15px; }
+      .settings input[type='range'] { width: 100%; }
+      .settings output { font-variant-numeric: tabular-nums; color: var(--dim); font-size: 12px; }
+      .settings .help { grid-column: 1 / -1; font-size: 12px; color: var(--dim); margin: -4px 0 0; }
+
+      .result .inner { max-width: 560px; text-align: center; padding-top: 20px; }
+      .result h2 { margin: 0; font-size: 22px; }
+      .result .rank { font-size: 120px; font-weight: 900; line-height: 1; margin: 6px 0; text-shadow: 0 0 40px currentColor; }
+      .result .lead { color: var(--dim); }
+      .result .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 16px 0; }
+      .result .grid4 div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+      .result .grid4 b { display: block; font-size: 24px; font-variant-numeric: tabular-nums; }
+      .result .grid4 span { font-size: 12px; color: var(--dim); }
+      .result .actions .video { background: linear-gradient(135deg, #7c5cff, #22c3ff); color: #fff; border: 0; font-weight: 800; }
+      .result .calib { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; font-size: 14px; margin-bottom: 16px; text-align: left; }
+      .result .actions { display: flex; gap: 10px; }
+      .result .actions button { flex: 1; padding: 14px; font-weight: 800; }
+
+      .count {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        font-size: 140px;
+        font-weight: 900;
+        pointer-events: none;
+        color: #fff;
+        text-shadow: 0 0 50px var(--accent);
+        z-index: 5;
+      }
+      /* 판정 글자: 화면 맨 위 가운데에 크게 (치는 순간마다 다시 튀어나옴) */
+      #judge-big { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 6; pointer-events: none; display: grid; justify-items: center; gap: 2px; text-align: center; white-space: nowrap; }
+      body:not(.playing) #judge-big { display: none; }
+      #jb-text { font-size: clamp(44px, 9vw, 96px); font-weight: 900; letter-spacing: 0.04em; line-height: 1; font-style: italic; opacity: 0; color: #fff; }
+      #jb-sub { font-size: 15px; font-weight: 700; color: rgb(255 255 255 / 0.8); opacity: 0; min-height: 1em; }
+      #jb-combo { font-size: clamp(18px, 3vw, 26px); font-weight: 900; color: #fff; opacity: 0; text-shadow: 0 2px 12px rgb(0 0 0 / 0.6); }
+      #jb-combo small { font-size: 0.55em; letter-spacing: 0.15em; margin-left: 6px; opacity: 0.8; }
+      #judge-big.perfect #jb-text {
+        background: linear-gradient(100deg, #fff6c2 0%, #ffd23f 30%, #fff 45%, #ffb703 60%, #ff7a18 100%);
+        background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+        filter: drop-shadow(0 0 18px rgb(255 190 40 / 0.85)) drop-shadow(0 4px 0 rgb(120 60 0 / 0.6));
+      }
+      #judge-big.great #jb-text { color: #5ad8ff; text-shadow: 0 0 22px rgb(60 190 255 / 0.9), 0 4px 0 rgb(0 60 110 / 0.7); }
+      #judge-big.good #jb-text { color: #6ee7a8; text-shadow: 0 0 16px rgb(60 220 140 / 0.7), 0 4px 0 rgb(0 80 40 / 0.6); }
+      #judge-big.miss #jb-text { color: #ff5a5a; font-size: clamp(36px, 7vw, 72px); text-shadow: 0 0 14px rgb(255 60 60 / 0.6), 0 4px 0 rgb(90 0 0 / 0.6); }
+      #judge-big.go #jb-text { animation: jb-pop 0.75s cubic-bezier(0.2, 1.6, 0.4, 1) forwards; }
+      #judge-big.go.perfect #jb-text { animation: jb-pop 0.75s cubic-bezier(0.2, 1.6, 0.4, 1) forwards, jb-shine 0.75s linear forwards; }
+      #judge-big.go.miss #jb-text { animation: jb-shake 0.6s ease-out forwards; }
+      #judge-big.go #jb-sub { animation: jb-fade 0.75s ease-out forwards; }
+      #judge-big.go #jb-combo { animation: jb-combo 0.75s ease-out forwards; }
+      #judge-big.milestone #jb-combo { color: #ffd23f; font-size: clamp(24px, 4vw, 34px); }
+      @keyframes jb-pop {
+        0% { opacity: 0; transform: scale(2.2); }
+        18% { opacity: 1; transform: scale(0.92); }
+        30% { transform: scale(1.05); }
+        42%, 70% { opacity: 1; transform: scale(1); }
+        100% { opacity: 0; transform: translateY(-14px) scale(1); }
+      }
+      @keyframes jb-shine { from { background-position: 100% 0; } to { background-position: 0% 0; } }
+      @keyframes jb-shake {
+        0% { opacity: 0; transform: translateY(-10px); }
+        12% { opacity: 1; transform: translate(-10px, 0); }
+        24% { transform: translateX(9px); }
+        36% { transform: translateX(-6px); }
+        48% { transform: translateX(3px); }
+        60%, 75% { opacity: 1; transform: translate(0, 0); }
+        100% { opacity: 0; transform: translateY(10px); }
+      }
+      @keyframes jb-fade { 0%, 10% { opacity: 0; } 25%, 70% { opacity: 1; } 100% { opacity: 0; } }
+      @keyframes jb-combo { 0% { opacity: 0; transform: scale(0.6); } 20% { opacity: 1; transform: scale(1.15); } 35%, 75% { opacity: 1; transform: scale(1); } 100% { opacity: 0; } }
+      @media (prefers-reduced-motion: reduce) { #judge-big.go #jb-text, #judge-big.go #jb-combo { animation: jb-fade 0.75s linear forwards; } }
+      /* 판정 글자와 겹치지 않게 점수 · 정확도는 양쪽 끝에 그대로 */
+      #yt-box {
+        position: absolute;
+        right: 12px;
+        bottom: 84px;
+        width: 256px;
+        aspect-ratio: 16 / 9;
+        z-index: 9;
+        border-radius: 10px;
+        overflow: hidden;
+        box-shadow: 0 6px 20px rgb(0 0 0 / 0.5);
+        background: #000;
+      }
+      #yt-box iframe { width: 100%; height: 100%; border: 0; pointer-events: none; display: block; }
+      body.playing #yt-box { bottom: 12px; }
+      /* 박자 탭 중: 영상을 크게 가운데, 아래에 큰 탭 버튼 */
+      #tap-overlay { position: fixed; inset: 0; z-index: 45; background: rgb(5 6 10 / 0.82); backdrop-filter: blur(4px); }
+      #tap-overlay[hidden] { display: none; }
+      body.tapping .dock, body.tapping .settings { display: none; }
+      body.tapping #yt-box { position: fixed; z-index: 46; left: 50%; top: 124px; right: auto; bottom: auto; transform: translateX(-50%); width: min(520px, calc(100vw - 32px)); }
+      .tap-panel { position: absolute; left: 50%; transform: translateX(-50%); top: calc(124px + min(293px, (100vw - 32px) * 0.5625) + 16px); width: min(520px, calc(100vw - 32px)); display: grid; gap: 12px; text-align: center; }
+      .tap-panel h2 { margin: 0; font-size: 20px; }
+      .tap-panel p { margin: 0; color: var(--dim); font-size: 14px; }
+      .tap-dots { display: flex; justify-content: center; gap: 8px; }
+      .tap-dots i { width: 16px; height: 16px; border-radius: 50%; background: #2a2f42; transition: background 0.1s, transform 0.1s; }
+      .tap-dots i.on { background: #34d399; transform: scale(1.15); }
+      #yt-tap { padding: 26px; font-size: 22px; font-weight: 800; border-radius: 16px; touch-action: manipulation; }
+      #tap-cancel { justify-self: center; background: transparent; border: 0; color: var(--dim); }
+      @media (max-width: 560px) {
+        .grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+        .cover { height: 84px; font-size: 38px; }
+        .result .grid4 { grid-template-columns: repeat(2, 1fr); }
+        .hud .score { font-size: 22px; }
+        #yt-box { width: 160px; }
+        #judge-big { top: 64px; }
+        /* 폰: 곡 고르는 동안엔 작은 영상이 시작 막대를 가리므로 숨긴다 (영상은 살아 있어야 해서 display 대신 visibility) */
+        body:not(.playing):not(.tapping) #yt-box { visibility: hidden; }
+        .dock { padding: 10px 12px; }
+        #start { padding: 12px 20px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main id="stage">
+      <canvas id="game"></canvas>
+      <canvas id="kit"></canvas>
+      <div class="progress"><span id="progress"></span></div>
+      <div class="hud" id="hud" hidden>
+        <div>
+          <div class="label" id="hud-title"></div>
+          <div class="score" id="hud-score">0</div>
+        </div>
+        <div class="right">
+          <div class="label">정확도</div>
+          <div class="score" id="hud-acc">100%</div>
+        </div>
+      </div>
+      <div class="count" id="count" hidden></div>
+      <div id="judge-big" aria-live="off"><b id="jb-text"></b><span id="jb-sub"></span><span id="jb-combo"></span></div>
+      <div id="yt-box" hidden><div id="yt-player"></div></div>
+
+      <!-- 곡 고르기 -->
+      <section class="overlay" id="menu">
+        <div class="inner">
+          <div class="menu-head">
+            <div>
+              <h2>곡 고르기</h2>
+              <p>드럼으로 좁혀 오는 링이 테두리에 닿는 순간, 그 드럼 쪽으로 휘둘러 치세요</p>
+            </div>
+            <div class="stick-line" id="stick-line"></div>
+          </div>
+          <div class="tabs" role="tablist" id="tabs">
+            <button role="tab" data-tab="pop" aria-selected="true">⭐ 인기곡</button>
+            <button role="tab" data-tab="mine" aria-selected="false">🔗 유튜브 링크로</button>
+            <button role="tab" data-tab="practice" aria-selected="false">🎯 연습곡 (음악 없이)</button>
+          </div>
+          <div class="filters" id="filters"></div>
+          <div class="grid" id="songs"></div>
+
+          <!-- 내 노래 (main.ts setupTracks) -->
+          <div class="mytrack" id="mytrack" hidden>
+            <div class="row yt-add">
+              <input type="url" id="yt-url" placeholder="유튜브 링크 붙여넣기 (youtube.com/watch?v=… · youtu.be/…)" />
+              <button id="yt-load" class="primary">＋ 추가</button>
+            </div>
+            <small>아무 노래나 유튜브 링크를 붙여 넣으면 목록에 생깁니다. ▶ 노래 틀기 → 박마다 스페이스(또는 스틱) 8번 → 바로 게임. 박자는 이 브라우저에 저장돼 다음부터는 바로 시작합니다.</small>
+          </div>
+          <div id="tap-overlay" hidden>
+            <div class="tap-panel">
+              <h2 id="tap-title">노래에 맞춰 탭!</h2>
+              <p id="tap-hint"></p>
+              <div class="tap-dots" id="tap-dots"></div>
+              <button id="yt-tap" class="primary">👏 탭 (스페이스 · 스틱 · 여기)</button>
+              <button id="tap-cancel">취소 (Esc)</button>
+            </div>
+          </div>
+          <div class="mytrack" id="yt-sync" hidden>
+            <div class="row">
+              <button id="yt-resync" hidden>↺ 박자 다시 맞추기</button>
+              <small>노트가 노래와 계속 어긋나면 박자를 다시 맞추세요. 조금씩 밀리는 건 치는 박자를 따라 자동으로 맞춰집니다.</small>
+            </div>
+          </div>
+          <div id="track-msg" style="margin-top: 12px"></div>
+                  </div>
+      </section>
+
+      <!-- 아래 시작 막대 -->
+      <div class="dock" id="dock">
+        <div class="sel"><b id="sel-title"></b><small id="sel-info"></small></div>
+        <div class="seg" id="opt-level" title="난이도"></div>
+        <button id="settings-btn" title="설정">⚙ 설정</button>
+        <button class="primary" id="start">▶ 시작</button>
+      </div>
+      <div class="settings" id="settings" hidden>
+        <h3>⚙ 설정</h3>
+        <span>킥(큰북)</span>
+        <div class="seg" id="opt-autokick"></div>
+        <p class="help">자동: 킥은 게임이 대신 쳐 줘서 스틱만 신경 쓰면 됩니다 (스틱 하나일 때 추천)</p>
+        <span>화면</span>
+        <div class="seg" id="opt-view"></div>
+        <span>가이드 소리</span>
+        <div class="seg" id="opt-guide"></div>
+        <span>메트로놈</span>
+        <div class="seg" id="opt-metro"></div>
+        <span>노트 속도</span>
+        <div class="seg" id="opt-speed"></div>
+        <span>타이밍 보정</span>
+        <div><input type="range" id="opt-offset" min="-150" max="150" step="5" /> <output id="opt-offset-out"></output></div>
+        <p class="help">늘 늦게 쳐도 맞게 하려면 +, 빨리 쳐도 맞게 하려면 − · 게임이 끝나면 추천값을 알려 줍니다</p>
+      </div>
+
+      <!-- 결과 -->
+      <section class="overlay result" id="result" hidden>
+        <div class="inner">
+          <h2 id="res-title"></h2>
+          <div class="rank" id="res-rank"></div>
+          <p class="lead"><span id="res-score"></span>점 · 정확도 <span id="res-acc"></span> · 최대 콤보 <span id="res-combo"></span></p>
+          <div class="grid4">
+            <div><b id="res-perfect"></b><span>Perfect</span></div>
+            <div><b id="res-great"></b><span>Great</span></div>
+            <div><b id="res-good"></b><span>Good</span></div>
+            <div><b id="res-miss"></b><span>Miss</span></div>
+          </div>
+          <div class="calib" id="res-calib"></div>
+          <div class="actions">
+            <button id="res-video" class="video">🎬 내 연주 영상</button>
+            <button id="res-retry" class="primary">↺ 다시 하기</button>
+            <button id="res-menu">곡 고르기</button>
+          </div>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="/src/rhythm/main.ts"></script>
+  </body>
+</html>

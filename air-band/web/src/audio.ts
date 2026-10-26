@@ -14,13 +14,14 @@
 //   빠르게 소리 내는 비결: 시작할 때 소리를 전부 만들어 두고, 칠 때는 start()만 한다.
 /**
  * class 번호 → 샘플 이름. 펌웨어의 버튼 1~4가 class 0~3을 보낸다.
- * 2단계에서 분류 클래스가 늘어나면 여기에 추가
+ * 4(크래시)는 2단계 방향 구역에서 스틱을 위로 들고 칠 때 나온다 (펌웨어 orientation.h DrumClass와 같음)
  */
 export const DRUM_CLASSES: Record<number, string> = {
   0: 'snare',
   1: 'kick',
   2: 'hihat',
   3: 'tom',
+  4: 'crash',
 };
 
 export interface PlayResult {
@@ -63,6 +64,18 @@ export class DrumAudio {
     );
   }
 
+  /** 드럼 소리를 스피커 말고 다른 곳(예: 영상 녹화용 MediaStreamAudioDestinationNode)으로도 보낸다 */
+  connectTap(node: AudioNode): void {
+    this.master.connect(node);
+  }
+  disconnectTap(node: AudioNode): void {
+    try {
+      this.master.disconnect(node);
+    } catch {
+      // 이미 끊김
+    }
+  }
+
   /** 브라우저 자동재생 정책 때문에 사용자 클릭 시 호출해야 한다 */
   // [설명] 브라우저는 사용자가 클릭·키 입력을 하기 전까지 소리를 막아 둔다(자동재생 정책).
   //   그래서 버튼 클릭 등 사용자 동작 안에서 resume()을 불러 오디오 엔진을 깨운다.
@@ -72,6 +85,25 @@ export class DrumAudio {
 
   /** 즉시 재생. velocity(0~127)는 볼륨에 반영 */
   play(cls: number, velocity: number): PlayResult {
+    this.voice(cls, velocity).start();
+    const startedAt = performance.now();
+
+    const outputLatencyMs = ((this.ctx.baseLatency ?? 0) + (this.ctx.outputLatency ?? 0)) * 1000;
+    return { startedAt, outputLatencyMs };
+  }
+
+  /**
+   * 오디오 시각 when(초, ctx.currentTime 기준)에 맞춰 재생을 예약한다. 리듬 게임의 가이드 소리용.
+   * [설명] 미리 예약해 두면 오디오 엔진이 샘플 단위로 정확한 순간에 재생한다 (setTimeout보다 훨씬 정확).
+   */
+  playAt(cls: number, velocity: number, when: number): AudioBufferSourceNode {
+    const src = this.voice(cls, velocity);
+    src.start(when);
+    return src; // 녹음 재생을 중간에 멈출 때 stop()을 부르려고 돌려준다
+  }
+
+  /** 재생기 하나 만들기: 드럼 버퍼 → 세기 볼륨 → master */
+  private voice(cls: number, velocity: number): AudioBufferSourceNode {
     const buf = this.buffers.get(cls) ?? this.buffers.get(0)!;
     const src = this.ctx.createBufferSource();
     src.buffer = buf;
@@ -80,11 +112,7 @@ export class DrumAudio {
     gain.gain.value = velocityToGain(velocity);
 
     src.connect(gain).connect(this.master);
-    src.start();
-    const startedAt = performance.now();
-
-    const outputLatencyMs = ((this.ctx.baseLatency ?? 0) + (this.ctx.outputLatency ?? 0)) * 1000;
-    return { startedAt, outputLatencyMs };
+    return src;
   }
 
   private async tryLoadFile(url: string): Promise<AudioBuffer | null> {
@@ -128,6 +156,8 @@ function synthesize(ctx: AudioContext, name: string): AudioBuffer {
       return synthHihat(ctx);
     case 'tom':
       return synthTom(ctx);
+    case 'crash':
+      return synthCrash(ctx);
     case 'snare':
     default:
       return synthSnare(ctx);
@@ -190,6 +220,31 @@ function synthTom(ctx: AudioContext): AudioBuffer {
     const body = Math.sin(phase) * Math.exp(-t * 9);
     const noise = (Math.random() * 2 - 1) * Math.exp(-t * 40) * 0.15;
     return body + noise;
+  });
+}
+
+/**
+ * 크래시 심벌: 고역 노이즈(쏴-) + 서로 배음이 안 맞는 고음 사인 몇 개(금속성 울림), 긴 감쇠
+ * [설명] 금속판은 배음이 정수배가 아니라서 "쨍"한 소리가 난다. 주파수를 일부러 어긋나게 골랐다.
+ */
+function synthCrash(ctx: AudioContext): AudioBuffer {
+  const sr = ctx.sampleRate;
+  const partials = [3150, 4270, 5560, 6830, 8120];
+  const phases = partials.map(() => Math.random() * 2 * Math.PI);
+  let prev = 0;
+  let hp = 0;
+  return render(ctx, 1.8, (t) => {
+    const white = Math.random() * 2 - 1;
+    hp = 0.7 * (hp + white - prev); // 대략 2~3kHz 이상만 남김
+    prev = white;
+    let ring = 0;
+    for (let k = 0; k < partials.length; k++) {
+      phases[k] += (2 * Math.PI * partials[k]) / sr;
+      ring += Math.sin(phases[k]);
+    }
+    const env = Math.exp(-t * 2.6);
+    const attack = Math.exp(-t * 30); // 처음 순간의 "챙"
+    return hp * (0.8 * env + 0.6 * attack) + (ring / partials.length) * 0.35 * env;
   });
 }
 

@@ -1,5 +1,5 @@
 import './tennis.css';
-import { AirBandConnection, webBluetoothSupport } from './ble';
+import { AirBandConnection, CMD, webBluetoothSupport } from './ble';
 
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const connect = element<HTMLButtonElement>('connect');
@@ -68,7 +68,7 @@ function hit(value: number, source: 'sensor' | 'demo'): void {
 
 conn.onHit = (event) => {
   // Board buttons and IMU hits share this protocol; don't claim to distinguish them.
-  if (event.velocity > 0) hit(event.velocity, 'sensor');
+  if (event.mode === 0 && event.velocity > 0) hit(event.velocity, 'sensor');
 };
 const availability = webBluetoothSupport();
 conn.onState = (state, detail) => {
@@ -76,6 +76,8 @@ conn.onState = (state, detail) => {
   connect.disabled = state === 'connecting' || !availability.ok;
   connect.textContent = connected ? '연결 끊기' : state === 'connecting' ? '연결 중…' : '센서 연결 ↗';
   connectionStatus.textContent = connected ? `연결됨 · ${detail ?? 'AirBand-R'}` : state === 'connecting' ? '기기를 연결하고 있어요' : detail ?? '센서 연결 전';
+  // Latest firmware also supports conducting; this page consumes drum-mode hits only.
+  if (connected) void conn.send(CMD.drum);
 };
 connect.addEventListener('click', () => {
   if (connected) conn.disconnect();

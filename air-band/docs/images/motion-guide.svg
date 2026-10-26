@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1000" height="720" viewBox="0 0 1000 720" role="img" aria-labelledby="title desc" font-family="Malgun Gothic, Noto Sans KR, sans-serif">
-  <title id="title">Air Band 동작 안내: 현재 기능과 미구현 동작 후보</title>
-  <desc id="desc">현재는 센서를 휘둘러 멈추면 방향과 관계없이 스네어를 냅니다. 세기에 따라 음량이 달라집니다. 버튼 1~4는 스네어, 킥, 하이햇, 탐입니다. 아래로 내리기, 앞으로 내밀기, 오른쪽 쓸기, 오른쪽 아래 내리기의 드럼별 배정은 아직 구현되지 않은 후보입니다.</desc>
+  <title id="title">Air Band 최신 방향별 드럼 안내</title>
+  <desc id="desc">최신 원본의 방향별 드럼 규칙입니다. 축과 정면을 맞춘 뒤 정면을 겨누면 스네어, 왼쪽 하이햇, 오른쪽 탐, 위 크래시입니다. 테니스 포핸드와 백핸드 분류는 아닙니다.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#2563eb"/></marker>
     <marker id="draft" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="4" markerHeight="4" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#9a5b13"/></marker>
@@ -8,7 +8,7 @@
   <rect width="1000" height="720" rx="20" fill="#f3f6fb"/>
   <text x="32" y="46" font-size="27" font-weight="700" fill="#16243a">어떻게 움직이면 무슨 소리가 나나요?</text>
   <rect x="32" y="68" width="936" height="302" rx="16" fill="#fff" stroke="#cad6e7"/>
-  <text x="56" y="104" font-size="20" font-weight="700" fill="#1d4ed8">현재 기능 · 센서 타격은 스네어</text>
+  <text x="56" y="104" font-size="20" font-weight="700" fill="#1d4ed8">먼저 축·정면 맞추기 → 방향을 겨누고 타격</text>
   <g stroke="#2563eb" stroke-width="7" fill="none" stroke-linecap="round">
     <path d="M105 147L153 182" stroke="#adc3e7"/>
     <path d="M105 209L166 219"/>
@@ -18,8 +18,8 @@
   <text x="56" y="285" font-size="15" fill="#52647c">허공에서 동작 · 실제로 때리지 않기</text>
   <path d="M296 195H352" stroke="#2563eb" stroke-width="5" marker-end="url(#arrow)"/>
   <rect x="385" y="139" width="224" height="100" rx="14" fill="#eaf1ff"/>
-  <text x="497" y="180" text-anchor="middle" font-size="27" font-weight="700" fill="#1d4ed8">스네어</text>
-  <text x="497" y="212" text-anchor="middle" font-size="17" fill="#334e7a">방향을 바꿔도 같은 악기</text>
+  <text x="497" y="180" text-anchor="middle" font-size="27" font-weight="700" fill="#1d4ed8">드럼 구역</text>
+  <text x="497" y="212" text-anchor="middle" font-size="17" fill="#334e7a">겨눈 방향에 따라 악기 선택</text>
   <text x="650" y="169" font-size="18" fill="#16243a">약한 타격 → 작은 소리</text>
   <text x="650" y="205" font-size="18" fill="#16243a">강한 타격 → 큰 소리</text>
   <text x="650" y="239" font-size="15" fill="#52647c">너무 약하면 감지되지 않을 수 있음</text>
@@ -29,8 +29,8 @@
   <text x="444" y="343" font-size="18" fill="#334e7a">2 킥</text>
   <text x="592" y="343" font-size="18" fill="#334e7a">3 하이햇</text>
   <text x="788" y="343" font-size="18" fill="#334e7a">4 탐</text>
-  <text x="32" y="414" font-size="22" font-weight="700" fill="#885111">다음 단계 후보 · 미구현</text>
-  <text x="32" y="443" font-size="16" fill="#6c5a43">이 동작으로 아직 악기가 바뀌지 않습니다. 방향은 착용자 몸 기준입니다.</text>
+  <text x="32" y="414" font-size="22" font-weight="700" fill="#885111">최신 main의 기본 방향 구역</text>
+  <text x="32" y="443" font-size="16" fill="#6c5a43">스틱이 겨누는 방향입니다. 휘두르는 경로와 다르며, 보정이 먼저 필요합니다.</text>
   <g fill="#fffaf0" stroke="#e0c7a0" stroke-dasharray="6 5">
     <rect x="32" y="462" width="222" height="190" rx="12"/>
     <rect x="270" y="462" width="222" height="190" rx="12"/>
@@ -38,17 +38,17 @@
     <rect x="746" y="462" width="222" height="190" rx="12"/>
   </g>
   <g fill="#70430f" font-size="20" font-weight="700" text-anchor="middle">
-    <text x="143" y="495">스네어 후보</text><text x="381" y="495">킥 후보</text>
-    <text x="619" y="495">하이햇 후보</text><text x="857" y="495">탐 후보</text>
+    <text x="143" y="495">정면 · 스네어</text><text x="381" y="495">왼쪽 · 하이햇</text>
+    <text x="619" y="495">오른쪽 · 탐</text><text x="857" y="495">위 · 크래시</text>
   </g>
   <g fill="none" stroke="#9a5b13" stroke-width="6" stroke-linecap="round" marker-end="url(#draft)">
-    <path d="M143 518V577"/><path d="M346 570L404 530"/>
-    <path d="M584 551H651"/><path d="M830 520L878 575"/>
+    <path d="M120 570L160 530"/><path d="M411 550H348"/>
+    <path d="M584 551H651"/><path d="M857 577V520"/>
   </g>
   <g fill="#704f27" font-size="17" text-anchor="middle">
-    <text x="143" y="623">아래로 내리기</text><text x="381" y="610">몸 앞으로 내밀기</text>
-    <text x="381" y="633" font-size="13">앞쪽 깊이를 나타낸 화살표</text>
-    <text x="619" y="623">오른쪽으로 쓸기</text><text x="857" y="623">오른쪽 아래로 내리기</text>
+    <text x="143" y="623">보정한 정면 겨누기</text><text x="381" y="610">왼쪽 겨누기</text>
+    <text x="381" y="633" font-size="13">착용자의 왼쪽 기준</text>
+    <text x="619" y="623">오른쪽 겨누기</text><text x="857" y="623">위로 겨누기</text>
   </g>
-  <text x="32" y="690" font-size="16" fill="#52647c">후보 동작은 실제 센서 기록으로 구별 가능성을 검증한 뒤 구현합니다. 킥 후보도 손 동작입니다.</text>
+  <text x="32" y="690" font-size="16" fill="#52647c">이전 스네어 고정 버전과 다릅니다. 테니스 구질 분류는 미구현이며, 최신 통합본의 실기 확인이 필요합니다.</text>
 </svg>
