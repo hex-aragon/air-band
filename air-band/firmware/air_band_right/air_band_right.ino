@@ -58,6 +58,7 @@ using airband::Vec3;
 // ============================================================================
 #define DEBUG_RAW   0   // 1이면 CSV(ax,ay,az,gx,gy,gz)만 출력 (데이터 수집용)
 #define DEBUG_HITS  1   // 1이면 타격 로그 출력 (DEBUG_RAW=1이면 CSV가 섞이지 않도록 자동으로 꺼짐)
+#define DEBUG_IMU   0   // 1이면 100Hz 처리 경로에서 1초 간격 가속도 로그
 #define DEBUG_ZONE  1   // 1이면 스틱 구역이 바뀔 때 "[ZONE] 하이햇" 출력 (DEBUG_RAW=1이면 꺼짐)
 #define HIT_LED     0   // 1이면 타격마다 LED1을 30ms 켠다 (웹 없이 타격 감지 확인용 디버그. 제품 기능 아님)
 
@@ -153,7 +154,7 @@ static const float    GYRO_SAT_DPS      = 1950.0f;
 //   세 축(x, y, z)의 가속도를 합친 크기 = √(x² + y² + z²). 방향과 상관없이 "얼마나 세게 흔들렸나"를 뜻한다.
 //   스틱을 휘두르다 멈추면 순간적으로 수 g ~ 10g 이상이 나온다. 이 "튀는 점"(피크)을 타격으로 본다.
 static const float    HIT_THRESHOLD_G = 2.5f;  // 이 값 이상인 피크만 타격. 오작동 많으면 ↑, 안 잡히면 ↓
-static const uint32_t REFRACTORY_MS   = 60;    // 타격 후 이 시간 동안은 무시. 한 번에 두 번 잡히면 ↑
+static const uint32_t REFRACTORY_MS   = 150;    // 타격 후 이 시간 동안은 무시. 한 번에 두 번 잡히면 ↑
 static const float    VEL_MIN_G       = HIT_THRESHOLD_G;  // 이 크기 → velocity 1
 static const float    VEL_MAX_G       = 12.0f; // 이 크기 이상 → velocity 127. 세게 쳐도 작으면 ↓
 
@@ -478,11 +479,20 @@ static bool beginLsm6ds(uint8_t addr) {
   if (!i2cReadRegs(addr, 0x0F, &who, 1)) return false;
   if (who != 0x69 && who != 0x6A && who != 0x6C) return false;
   // CTRL3_C: BDU=1(읽는 도중 값 갱신 방지), IF_INC=1(주소 자동 증가)
-  i2cWriteReg(addr, 0x12, 0x44);
+  if (!i2cWriteReg(addr, 0x12, 0x44)) return false;
   // CTRL1_XL: ODR 416Hz, FS ±16g (0.488 mg/LSB)
-  i2cWriteReg(addr, 0x10, 0x64);
+  if (!i2cWriteReg(addr, 0x10, 0x64)) return false;
   // CTRL2_G: ODR 416Hz, FS ±2000°/s (70 m°/s/LSB)
-  i2cWriteReg(addr, 0x11, 0x6C);
+  if (!i2cWriteReg(addr, 0x11, 0x6C)) return false;
+  // 가속도·자이로·BDU 설정이 실제로 적용됐는지 확인한다.
+  uint8_t ctrl1, ctrl2, ctrl3;
+  if (!i2cReadRegs(addr, 0x10, &ctrl1, 1) || ctrl1 != 0x64) return false;
+  if (!i2cReadRegs(addr, 0x11, &ctrl2, 1) || ctrl2 != 0x6C) return false;
+  if (!i2cReadRegs(addr, 0x12, &ctrl3, 1) || ctrl3 != 0x44) return false;
+  if (!DEBUG_RAW) {
+    Serial.print(F("[IMU] LSM6 WHO_AM_I=0x")); Serial.print(who, HEX);
+    Serial.println(F(" accel=416Hz range=16g gyro=2000dps BDU=on"));
+  }
   g_lsbPerG = 1000.0f / 0.488f;
   g_lsbPerDps = 1000.0f / 70.0f;
   return true;
@@ -991,8 +1001,10 @@ static void pollButtons() {
 //        └──────────────── 시간 (10ms 간격)
 //
 //   m0가 들어와야 m1이 꼭대기였는지 알 수 있으므로 판정이 10ms 늦다. 대신 세기를 정확히 잰다.
-//   불응기(60ms): 스틱이 튕겨 생기는 두 번째 피크를 또 하나의 타격으로 세지 않게 막는다.
+//   불응기(150ms): 스틱이 튕겨 생기는 두 번째 피크를 또 하나의 타격으로 세지 않게 막는다.
 static void detectHit(float m0) {
+  // 시작/읽기 실패 뒤의 서로 떨어진 샘플로 피크를 만들지 않는다.
+  if (g_ring.count < 3) return;
   bool isPeak = (g_m1 >= HIT_THRESHOLD_G) && (g_m1 > g_m2) && (g_m1 >= m0);
   bool refractoryOver = !g_hasHit || (g_m1Ms - g_lastHitMs >= REFRACTORY_MS);
 
@@ -1118,6 +1130,17 @@ void setup() {
 //   - LSM6DS: STATUS_REG(0x1E)의 GDA 비트로 "새 자이로 값이 나왔나"를 1ms마다 보고, 나올 때마다 읽는다 (416Hz 전부)
 //   - dt는 읽은 시각 차이가 아니라 센서 값 간격(약 2.4ms, 실제 간격을 재서 맞춤) × 지나간 값 개수 → 읽는 시각이 1ms씩 들쭉날쭉해도 정확
 //   - 그 밖의 센서(MPU-6050, 내부 1kHz): 2.5ms 타이머로 읽고 실제 흐른 시간으로 적분
+static void resetHitHistory() {
+  g_ring.head = g_ring.count = 0;
+  g_m1 = g_m2 = 0.0f;
+  g_haveSample = false;
+  g_blockMaxG = 0.0f;
+  g_blockDiv = 0;
+#if TINYML_ACTIVE
+  g_featHead = g_featCount = 0;
+#endif
+}
+
 static bool imuFresh(uint32_t nowUs) {
   if (g_imuType == IMU_LSM6DS) {
     uint8_t st = 0;
@@ -1195,10 +1218,13 @@ void loop() {
   }
 
   // 1) 새 IMU 값이 나왔으면 바로 읽어 방향을 적분한다 (LSM6DS: 센서가 값을 낼 때마다 = 416Hz, 하나도 안 빠뜨리게)
+  // 긴 공백 전후의 피크/모델 입력을 이어 붙이지 않는다.
+  if (g_haveSample && nowUs - g_lastReadUs > 2 * SAMPLE_PERIOD_US) resetHitHistory();
   bool fresh = imuFresh(nowUs);
   if (fresh) {
     ImuSample s;
     if (imuRead(s)) integrateSample(s, nowUs);
+    else resetHitHistory();
   }
   // 2) 10ms마다 나머지(타격 감지 · 링버퍼 · 모션 패킷)는 가장 최근 값으로
   if (!g_haveSample || (int32_t)(nowUs - g_nextSampleUs) < 0) {
@@ -1214,6 +1240,15 @@ void loop() {
 
   // ---- 여기부터 100Hz ----
   uint32_t nowMs = millis();
+#if DEBUG_IMU && !DEBUG_RAW
+  static uint32_t lastReportMs = 0;
+  if (nowMs - lastReportMs >= 1000) {
+    lastReportMs = nowMs;
+    Serial.print(F("[IMU] ax=")); Serial.print(s.acc.x, 3);
+    Serial.print(F(" ay=")); Serial.print(s.acc.y, 3);
+    Serial.print(F(" az=")); Serial.println(s.acc.z, 3);
+  }
+#endif
   g_ring.push(s, nowMs);
   g_gyroBias.correct(s.gyro, s.acc);   // 정지 판정 · bias 갱신은 예전처럼 100Hz 묶음(0.5초)으로
   uint8_t zone = g_orient.zone(ZONES);

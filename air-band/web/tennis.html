@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#153d32" />
+    <title>Digital Tennis · 스윙 코트</title>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="./tennis.html"><span class="brand-ball" aria-hidden="true">◉</span> DIGITAL TENNIS</a>
+      <span class="edition">SENSOR LAB / 01</span>
+      <a class="back-link" href="./pads.html">드럼 진단 화면 ↗</a>
+    </header>
+    <main>
+      <section class="intro">
+        <div><p class="eyebrow">YOUR SWING, ON COURT</p><h1>당신의 스윙을,<br /> 코트 위로.</h1><p class="lead">센서를 휘둘러 공을 보내보세요.<br />보드 없이도 데모 스윙으로 시작할 수 있어요.</p></div>
+        <div class="connect-card"><span class="small-label">CONNECTION</span><p id="connection-status" role="status">센서 연결 전</p><button id="connect" class="button dark">센서 연결 <span aria-hidden="true">↗</span></button><p class="micro">NU40 DK · AirBand-R<br />Chrome / Edge에서 연결하세요.</p></div>
+      </section>
+      <p id="support" class="notice" hidden></p>
+      <section class="court-layout" aria-label="테니스 스윙 연습">
+        <div class="court-panel">
+          <div class="court-top"><span><i class="live-dot"></i> SWING PRACTICE</span><span id="input-source">입력 대기</span></div>
+          <svg id="court" viewBox="0 0 900 570" role="img" aria-label="센서나 데모 입력에 따라 공이 움직이는 테니스 코트">
+            <defs>
+              <linearGradient id="ground" x2="0" y2="1"><stop stop-color="#234e3f"/><stop offset="1" stop-color="#123c31"/></linearGradient>
+              <pattern id="mesh" width="12" height="10" patternUnits="userSpaceOnUse"><path d="M12 0H0V10" fill="none" stroke="#e7eee6" stroke-opacity=".32" stroke-width=".8"/></pattern>
+              <filter id="ball-glow"><feGaussianBlur stdDeviation="5"/></filter>
+            </defs>
+            <rect width="900" height="570" fill="url(#ground)"/>
+            <path d="M0 85H900M0 100H900M0 115H900" stroke="#789783" opacity=".15"/>
+            <text x="450" y="75" text-anchor="middle" fill="#cfe3c9" opacity=".36" font-size="14" letter-spacing="8">DIGITAL TENNIS CLUB</text>
+            <path d="M225 125H675L823 505H77Z" fill="#83a091" opacity=".18"/>
+            <path d="M242 143H658L785 480H115Z" fill="#538977"/>
+            <path d="M274 143H626L738 480H162Z" fill="#3e7865"/>
+            <g fill="none" stroke="#f3f1d9" stroke-width="2.5" opacity=".9">
+              <path d="M242 143H658L785 480H115Z"/>
+              <path d="M274 143L162 480M626 143L738 480"/>
+              <path d="M256 198H644M208 341H692M450 198V341"/>
+              <path d="M450 143V153M450 470V480"/>
+            </g>
+            <ellipse cx="450" cy="401" rx="35" ry="9" fill="#163e32" opacity=".5"/>
+            <path d="M169 286L731 286L719 241H181Z" fill="#102d26" opacity=".65"/>
+            <path d="M169 286L731 286L719 241H181Z" fill="url(#mesh)"/>
+            <path d="M180 237Q450 252 720 237" fill="none" stroke="#faf7dc" stroke-width="5"/>
+            <path d="M180 230V294M720 230V294" stroke="#c7d6c9" stroke-width="6"/>
+            <g id="ball" transform="translate(450 400)">
+              <circle r="19" fill="#e1f98a" opacity=".25" filter="url(#ball-glow)"/>
+              <circle r="11" fill="#d8f36a"/>
+              <path d="M-8-8Q3 0-8 8M8-8Q-3 0 8 8" fill="none" stroke="#f9ffca" stroke-width="1.6"/>
+            </g>
+            <g transform="translate(534 430) rotate(-30)" stroke="#e6eddf" fill="none">
+              <ellipse rx="25" ry="34" stroke-width="5"/><ellipse rx="20" ry="29" fill="url(#mesh)" stroke-width="1"/>
+              <path d="M-11 30L0 54L11 30M0 54V85" stroke-width="5"/><path d="M0 63V87" stroke="#cedc6c" stroke-width="9"/>
+            </g>
+          </svg>
+          <div class="court-bottom"><div><span class="small-label">NEXT SHOT</span><p id="shot-message" role="status">준비되면, 가볍게 한 번.</p></div><button id="demo" class="button lime">데모 스윙 <span aria-hidden="true">↗</span></button></div>
+          <p class="keyboard-hint">SPACE로도 데모 스윙 · 공의 경로는 시각 효과입니다.</p>
+        </div>
+        <aside class="session-panel">
+          <div class="session-heading"><h2>이번 세션</h2><button id="reset" class="text-button">초기화</button></div>
+          <div class="stat"><span>보드 입력</span><strong id="sensor-count">00</strong><small>스윙 또는 보드 버튼에서 받은 타격</small></div>
+          <div class="stat secondary"><span>데모 스윙</span><strong id="demo-count">00</strong><small>보드 기록과 별도로 집계합니다.</small></div>
+          <div class="power"><div><span>최근 입력 세기</span><strong><span id="power-value">—</span><small> / 127</small></strong></div><meter id="power-meter" aria-label="최근 입력 세기" min="0" max="127" value="0">0</meter><p>센서의 상대적인 타격 세기예요.<br />공의 속도(km/h)를 측정한 값은 아닙니다.</p></div>
+          <div class="session-note"><span class="small-label">ONE STEP AT A TIME</span><p>한 번 휘두르고 멈춰보세요.<br />단발 확인은 1초 간격으로.</p><small>현재는 타격 여부·세기만 감지해요.<br />포핸드·백핸드 구분은 아직 없어요.</small></div>
+        </aside>
+      </section>
+      <section class="activity"><div><p class="eyebrow">SESSION NOTES</p><h2>최근 입력</h2></div><ol id="events" aria-label="최근 입력 기록"><li class="empty">첫 스윙을 기다리고 있어요.</li></ol></section>
+      <footer>스윙 시각화 프로토타입 <span>실제 득점·궤적·구속 판정은 포함하지 않습니다.</span></footer>
+    </main>
+    <script type="module" src="./src/tennis.ts"></script>
+  </body>
+</html>

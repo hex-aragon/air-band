@@ -134,7 +134,7 @@ emitHit(i, BUTTON_VELOCITY, nowMs);                         // 버튼 i → 드�
 ```
 
 - 세기: 2.5g → 1, 12g 이상 → 127 (그 사이는 비례)
-- 불응기 60ms: 스틱이 튕겨서 생기는 두 번째 피크는 무시
+- 불응기 150ms (더 빠른 의도적 연타도 무시): 스틱이 튕겨서 생기는 두 번째 피크는 무시
 - `classifyHit(buf, peakZone)`: 2단계에서는 피크 순간 스틱 방향의 구역(`orientation.h`)을 그대로 돌려준다 (정면 스네어 · 왼쪽 하이햇 · 오른쪽 탐 · 위 크래시). 나중에 AI 모델을 붙일 자리이기도 하다
 
 버튼과 IMU 모두 마지막에 같은 `emitHit()`을 부릅니다. 그래서 센서를 연결해도 웹은 고칠 필요가 없습니다.
@@ -321,7 +321,7 @@ BufferSource(드럼 소리) → Gain(세기) → master Gain(전체 볼륨 0.9) 
 | 버튼 떨림 무시 시간 | 펌웨어 | `BUTTON_DEBOUNCE_MS` (25) |
 | 타격 민감도 (IMU) | 펌웨어 | `HIT_THRESHOLD_G` (2.5) |
 | 세게 쳐야 최대 세기 | 펌웨어 | `VEL_MAX_G` (12.0) |
-| 연타 이중 감지 방지 | 펌웨어 | `REFRACTORY_MS` (60) |
+| 연타 이중 감지 방지 | 펌웨어 | `REFRACTORY_MS` (150) |
 | 드럼 종류 추가 | 웹 `audio.ts` + `main.ts` | `DRUM_CLASSES`, `PAD_LABELS` |
 | 세기→볼륨 곡선 | 웹 `audio.ts` | `velocityToGain()`의 1.6 |
 

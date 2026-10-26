@@ -1,0 +1,42 @@
+NU40 DK / LSM6DS3TR · 테니스 시각화 작업 인수인계
+
+역할 분담
+- 기존 Windows PC: 코드/설정 수정, 빌드, 커밋, 푸시, PR 관리.
+- 다른 PC: 전달된 최신 버전의 빌드/업로드와 실기 테스트. 소스를 수정하거나 커밋/푸시하지 않는다.
+- 브랜치: https://github.com/yyhyun64/air-band/tree/codex/lsm6-sensor-checks
+- PR: https://github.com/hex-aragon/air-band/pull/1
+
+버전 차이 — 중요
+- 이전 테스트 버전 17c41ba는 스네어 고정, 가속도 3축만 처리했다.
+- 최신 브랜치는 원본 main a1340ec의 방향 구역/6축/자이로 적분/모션 스트림을 보존하여 통합했다.
+  기본 방향은 정면 스네어, 왼쪽 하이햇, 오른쪽 탐, 위 크래시. 킥은 버튼 2.
+  테니스 포핸드/백핸드 판별은 아니다. 이전 단일 .ino만 복사하지 말고 스케치 폴더 전체를 사용한다.
+- 이번 보완: LSM6 가속도/자이로/BDU 설정 읽기 검증, 읽기 실패/긴 공백 뒤 피크와 모델 입력 초기화,
+  실제 샘플 3개 후 피크 판정, REFRACTORY_MS=150, DEBUG_IMU=0 (DEBUG_HITS 유지).
+- 이전 버전의 업로드, 약 1.03g, BLE 수신, 스네어 청음은 다른 PC 결과 화면에서 성공 보고.
+  최신 통합 펌웨어와 테니스 화면의 실제 BLE 검증은 아직 남아 있다.
+
+다른 PC에서 할 일
+1. 최신 브랜치 소스를 받아 실제 USB 포트를 조회한다. 과거 COM7/현재 다른 PC의 포트를 고정하지 않는다.
+2. 보드 관리자 URL:
+   https://raw.githubusercontent.com/Nucode01/Adafruit_nRF52_Arduino/refs/heads/master/package_nuduino_index.json
+   nucode:nrf52@1.0.2, FQBN nucode:nrf52:nu40dk. 스케치 폴더 전체(orientation.h, ictus.h 포함)를 사용한다.
+   arduino-cli compile --fqbn nucode:nrf52:nu40dk air-band/firmware/air_band_right
+   arduino-cli upload --fqbn nucode:nrf52:nu40dk --port <실제포트> air-band/firmware/air_band_right
+3. 부팅 보정 동안 약 1초 가만히 둔다. 시리얼 115200 baud에서 WHO_AM_I 및 감지 주소를 확인한다.
+   WHO_AM_I와 I2C 주소는 서로 다르다. 원본의 0x6A 기록은 다른 환경의 기록이며 현재 보드의 주소는 확인한다.
+   기본 SDA=P0.26, SCL=P0.27. 배선을 바꿀 때는 먼저 전원을 끈다.
+4. 웹: cd air-band/web → npm ci → npm run build → npm run dev.
+   /pads.html 또는 /kit.html의 스틱 연결 안내에서 축 맞추기(스틱 세우기), 정면 맞추기를 진행한다.
+   /tennis.html에서는 센서 연결 후 입력 횟수/세기/공 반응을 확인한다.
+   기존 공개 사이트는 이 PR 내용이 자동 배포되지 않으므로 최신 브랜치로 실행한다.
+5. 정지 30초 오작동, 단발 20회(1초 간격), 약한/강한 세기 변화, 약 200ms 간격 연타 20회를 비교한다.
+   최신 방향별 드럼도 확인한다. 데모 버튼은 보드 입력 수를 늘리지 않아야 한다.
+   150ms 미만 의도적 연타도 걸러지며, 300ms 안의 모든 HIT를 중복으로 단정하지 않는다.
+6. 사용한 커밋, 실제 동작 횟수, HIT 로그, 중복/누락 결과를 기존 Windows PC에 전달한다.
+   조정과 Git 반영은 기존 PC에서 담당한다. 가속도 진단용 빌드가 필요해도 기존 PC에 요청한다.
+
+범위
+- 테니스 코트는 타격/세기의 시각화. 공 경로는 연출이며 실제 구속/궤적/득점 측정이 아니다.
+- 패킷상 보드 버튼과 센서 타격을 구분하지 못하므로 모두 보드 입력으로 표시한다.
+- 공개 배포와 main 병합은 수행하지 않았다.
